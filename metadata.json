@@ -1,0 +1,7 @@
+{
+  "name": "Canopy: AI Whiteboard",
+  "description": "An intelligent whiteboard that listens to your lectures or reads your syllabus, extracts key concepts, and generates visual aids in real-time to help you learn.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
