@@ -26,6 +26,7 @@ export interface VisualCard {
   backgroundColor?: string;
   fileUrl?: string; // For image/file objects
   sourceText?: string; // For linking summaries back to source
+  newlyCreated?: boolean; // Flag to trigger auto-editing
 }
 
 export interface Folder {
@@ -47,6 +48,13 @@ export interface Roadmap {
   suggestedGoal: string;
 }
 
+export interface GeneratedVisual {
+  id:string;
+  keyword: string;
+  imageUrl?: string;
+  status: 'loading' | 'loaded' | 'error';
+}
+
 export interface Chat {
     id:string;
     title: string;
@@ -58,11 +66,18 @@ export interface Chat {
     summaryPoints?: string[];
     quizzes?: Quiz[];
     roadmaps?: Roadmap[];
+    generatedVisuals?: GeneratedVisual[];
     drawingHistory?: string[]; // Array of data URLs for canvas states
     drawingHistoryIndex?: number;
     whiteboardBackground?: 'plain' | 'grid' | 'lined';
     folderId?: string | null;
     uploadedFiles?: UploadedFile[];
+}
+
+export interface Toast {
+  id: number;
+  message: string;
+  type: 'info' | 'success' | 'error';
 }
 
 export enum QuestionType {

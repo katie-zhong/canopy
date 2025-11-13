@@ -3,9 +3,24 @@ import type { QuizQuestion, LearningStep } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+const parseJsonResponse = <T>(responseText: string): T => {
+    let jsonStr = responseText.trim();
+    const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (match && match[1]) {
+        jsonStr = match[1];
+    }
+    try {
+        return JSON.parse(jsonStr);
+    } catch (error) {
+        console.error("Failed to parse JSON response:", jsonStr);
+        throw new Error("Invalid JSON format received from the API.");
+    }
+};
+
+
 export const summarizeText = async (text: string): Promise<{ point: string; source: string; }[]> => {
     if (!text.trim()) return [];
-    const prompt = `Analyze the following text and create a structured summary of its key points. For each point, provide the verbatim source quote from the text that supports it.
+    const prompt = `Analyze the following text and create a structured summary of its key points. For each point, provide the verbatim source quote from the text that supports it. It is critical to extract and include any mathematical formulas or LaTeX code exactly as they appear in the text within the relevant summary points.
 
 TEXT:
 """${text}"""`;
@@ -24,7 +39,7 @@ TEXT:
                           items: {
                               type: Type.OBJECT,
                               properties: {
-                                  point: { type: Type.STRING, description: "The Markdown-formatted summary point." },
+                                  point: { type: Type.STRING, description: "The Markdown-formatted summary point, including any exact formulas." },
                                   source: { type: Type.STRING, description: "The exact source text from the input." }
                               },
                               required: ["point", "source"]
@@ -35,7 +50,7 @@ TEXT:
               }
           }
         });
-        const result = JSON.parse(response.text.trim());
+        const result = parseJsonResponse<{ summary: { point: string; source: string; }[] }>(response.text);
         return result.summary || [];
 
     } catch (error) {
@@ -103,8 +118,7 @@ export const extractKeywords = async (text: string): Promise<string[]> => {
         },
     });
 
-    const jsonText = response.text.trim();
-    const result = JSON.parse(jsonText);
+    const result = parseJsonResponse<{ keywords: string[] }>(response.text);
     return result.keywords || [];
   } catch (error) {
     console.error("Error extracting keywords:", error);
@@ -113,7 +127,7 @@ export const extractKeywords = async (text: string): Promise<string[]> => {
 };
 
 export const generateVisualForKeyword = async (keyword: string, context: string): Promise<string> => {
-    const prompt = `Generate a visually engaging and educationally meaningful diagram or illustration for the concept: "${keyword}". Do not just create a simple icon. The visual should explain the concept, show a process, or provide an example. Use clear labels if necessary. The style must be clean, modern, and suitable for a digital whiteboard (e.g., minimalist, flat design). Ensure the background is white. If the concept involves a mathematical formula or LaTeX code (like $E=mc^2$), render it accurately and legibly within the image. Context from the lecture is provided below to aid understanding: """${context}"""`;
+    const prompt = `Generate a high-quality, visually engaging image for the concept: "${keyword}". The image should be a photorealistic, real-world example or a clear, detailed diagram. **Do not use simple icons, abstract shapes, or generic clip art.** The goal is a rich visual aid that enhances understanding. If the concept includes a mathematical formula (e.g., $E=mc^2$), render it clearly and accurately within the visual. The image must have a white background. Use the following context for accuracy.\n\nCONTEXT:\n"""${context}"""`;
     try {
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
@@ -173,7 +187,7 @@ export const generateQuiz = async (text: string): Promise<QuizQuestion[]> => {
                 }
             }
         });
-        const result = JSON.parse(response.text.trim());
+        const result = parseJsonResponse<{ quiz: QuizQuestion[] }>(response.text);
         return result.quiz || [];
     } catch (error) {
         console.error("Error generating quiz:", error);
@@ -221,7 +235,7 @@ TEXT:
                 }
             }
         });
-        const result = JSON.parse(response.text.trim());
+        const result = parseJsonResponse<{ roadmap: LearningStep[], suggestedGoal: string }>(response.text);
         const steps = (result.roadmap || []).sort((a: LearningStep, b: LearningStep) => a.step - b.step);
         return { steps, suggestedGoal: result.suggestedGoal || '' };
     } catch (error) {
@@ -279,7 +293,7 @@ ${folderListString}
                 },
             },
         });
-        const result = JSON.parse(response.text.trim());
+        const result = parseJsonResponse<{ folderId: string }>(response.text);
         const returnedId = result.folderId;
         if (returnedId && returnedId !== 'null' && folders.some(f => f.id === returnedId)) {
             return returnedId;
@@ -288,5 +302,46 @@ ${folderListString}
     } catch (error) {
         console.error("Error categorizing session:", error);
         return null;
+    }
+};
+
+export const generateNotepadsFromText = async (text: string, count: number): Promise<{ title: string; content: string; }[]> => {
+    if (!text.trim() || count <= 0) return [];
+    const prompt = `Analyze the provided text and break it down into ${count} distinct, self-contained summary notes. Each note should cover a major topic or concept from the text. For each note, provide a concise title and a paragraph of summary content.
+
+TEXT:
+"""${text}"""`;
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        notes: {
+                            type: Type.ARRAY,
+                            description: `An array of ${count} summary notes.`,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: { type: Type.STRING, description: "A concise title for the note." },
+                                    content: { type: Type.STRING, description: "The summary content of the note." }
+                                },
+                                required: ["title", "content"]
+                            }
+                        }
+                    },
+                    required: ["notes"]
+                }
+            }
+        });
+        const result = parseJsonResponse<{ notes: { title: string; content: string; }[] }>(response.text);
+        return result.notes || [];
+    } catch (error) {
+        console.error("Error generating notepads:", error);
+        throw new Error("Failed to generate notepads.");
     }
 };

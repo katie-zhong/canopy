@@ -139,6 +139,14 @@
         .summary-content.prose h2 { font-size: 1.25rem; margin-top: 0; border-bottom: 0; }
         .summary-content.prose p { margin-bottom: 0.5rem; }
         .summary-content.prose ul { margin-top: 0; }
+
+        /* Toast animations */
+        @keyframes fadeInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOutRight { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
+        @keyframes progress { from { width: 100%; } to { width: 0%; } }
+        .animate-fadeInRight { animation: fadeInRight 0.3s ease-out forwards; }
+        .animate-fadeOutRight { animation: fadeOutRight 0.3s ease-in forwards; }
+        .animate-progress { animation: progress 5s linear forwards; }
     </style>
 <script type="importmap">
 {

@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { marked } from 'marked';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { VisualCard, VisualCardStatus, Chat, QuizQuestion, LearningStep, QuestionType, Quiz, Roadmap, Folder, UploadedFile } from './types';
+import { VisualCard, VisualCardStatus, Chat, QuizQuestion, LearningStep, QuestionType, Quiz, Roadmap, Folder, UploadedFile, GeneratedVisual, Toast } from './types';
 import * as geminiService from './services/geminiService';
 import {
     UploadIcon, ShareIcon, MicIcon, PauseIcon, PlayIcon, StopIcon, SparkleIcon, DeleteIcon,
@@ -11,8 +10,8 @@ import {
     SettingsIcon, FlameIcon, QuizIcon, RoadmapIcon, GridIcon, PenIcon, HighlighterIcon, EraserIcon,
     ChevronDownIcon, ChevronRightIcon, SelectIcon, TextIcon, UndoIcon, RedoIcon,
     RectangleIcon, EllipseIcon, LineIcon, ArrowIcon, FileIcon, SidebarCollapseIcon, SourceIcon, PaletteIcon,
-    CanopyLogo, ZoomInIcon, ZoomOutIcon, FullScreenIcon,
-    NoteIcon
+    CanopyLogo, ZoomInIcon, ZoomOutIcon, FullScreenIcon, ClearIcon,
+    NoteIcon, RefreshIcon, ImageIcon, CheckCircleIcon, XCircleIcon, InfoCircleIcon
 } from './components/Icons';
 
 // Extend the Window interface for external libraries
@@ -44,7 +43,7 @@ const KatexRenderer: React.FC<{ content: string, className?: string }> = ({ cont
     return <div ref={renderRef} className={className}></div>;
 };
 
-const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void }> = ({ card, scale, onDelete, onUpdate }) => {
+const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void, onRegenerate: (id: string, keyword: string) => void }> = ({ card, scale, onDelete, onUpdate, onRegenerate }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(card.text || '');
@@ -52,10 +51,21 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
     const cardRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+    const { newlyCreated } = card;
+    useEffect(() => {
+        if (newlyCreated) {
+            setIsEditing(true);
+            // Remove the flag after triggering edit mode
+            onUpdate({ ...card, newlyCreated: false });
+        }
+    }, [newlyCreated, card, onUpdate]);
+
+
     useEffect(() => { if (isEditing) { textareaRef.current?.focus(); textareaRef.current?.select(); } }, [isEditing]);
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement || e.target instanceof Path2D || isEditing) return;
+        if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement || e.target instanceof Path2D || (e.target as HTMLElement).closest('button')) return;
+        if (isEditing && textareaRef.current?.contains(e.target as Node)) return;
         setIsDragging(true);
         dragStartPos.current = { x: e.clientX, y: e.clientY, top: card.position.top, left: card.position.left };
         window.addEventListener('mousemove', handleMouseMove);
@@ -86,6 +96,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
     const cardStyle: React.CSSProperties = { top: `${card.position.top}px`, left: `${card.position.left}px`, transform: `rotate(${card.rotation}deg)`, width: card.width ? `${card.width}px` : undefined, height: card.height ? `${card.height}px` : undefined, backgroundColor: card.backgroundColor };
     
     const colors = ['#fef9c3', '#f0fdf4', '#f0f9ff', '#fef2f2', '#faf5ff'];
+    const isTextbox = card.type === 'text' && card.backgroundColor === 'transparent';
 
     if (card.type === 'image') {
         return (
@@ -103,39 +114,53 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
         );
     }
 
+    const cardClasses = isTextbox
+        ? "visual-card absolute group"
+        : "visual-card bg-white p-3 rounded-lg border border-slate-200 shadow-lg w-56 flex flex-col group";
+
     return (
-        <div ref={cardRef} onMouseDown={handleMouseDown} style={cardStyle} className="visual-card bg-white p-3 rounded-lg border border-slate-200 shadow-lg w-56 flex flex-col group">
-            <div className="flex items-start justify-between mb-2 pb-2 border-b border-slate-200/70">
-                <span className="font-semibold text-sm text-slate-700 truncate pr-2">{card.keyword}</span>
-                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    {card.type === 'text' && (
-                        <div className="relative">
-                            <button className="p-1 hover:bg-slate-200 rounded-full" onClick={(e) => { e.stopPropagation(); (e.currentTarget.nextElementSibling as HTMLDivElement).classList.toggle('hidden') }}><PaletteIcon /></button>
-                            <div className="absolute top-full right-0 mt-1 bg-white border rounded-md shadow-lg p-1 gap-1 hidden z-10 flex">
-                                {colors.map(c => <button key={c} style={{backgroundColor: c}} className="w-5 h-5 rounded-full border border-slate-200" onClick={() => handleColorChange(c)} />)}
+        <div ref={cardRef} onMouseDown={handleMouseDown} style={cardStyle} className={cardClasses}>
+            {!isTextbox && (
+                <div className="flex items-start justify-between mb-2 pb-2 border-b border-slate-200/70">
+                    <span className="font-semibold text-sm text-slate-700 truncate pr-2">{card.keyword}</span>
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        {card.type === 'ai' && (
+                            <button onClick={() => onRegenerate(card.id, card.keyword)} className="p-1 hover:bg-slate-200 rounded-full text-slate-400" title="Regenerate"><RefreshIcon/></button>
+                        )}
+                        {card.type === 'text' && (
+                            <div className="relative">
+                                <button className="p-1 hover:bg-slate-200 rounded-full" onClick={(e) => { e.stopPropagation(); (e.currentTarget.nextElementSibling as HTMLDivElement).classList.toggle('hidden') }}><PaletteIcon /></button>
+                                <div className="absolute top-full right-0 mt-1 bg-white border rounded-md shadow-lg p-1 gap-1 hidden z-10 flex">
+                                    {colors.map(c => <button key={c} style={{backgroundColor: c}} className="w-5 h-5 rounded-full border border-slate-200" onClick={() => handleColorChange(c)} />)}
+                                </div>
                             </div>
-                        </div>
-                    )}
-                    {card.sourceText && (
-                        <div className="relative group/source">
-                           <button className="p-1 hover:bg-slate-200 rounded-full text-slate-400" onClick={(e) => e.stopPropagation()}><SourceIcon/></button>
-                           <div className="absolute top-full right-0 mt-1 bg-slate-800 text-white text-xs p-2 rounded-md shadow-lg w-64 z-10 opacity-0 group-hover/source:opacity-100 pointer-events-none transition-opacity">
-                                <strong>Source:</strong> "{card.sourceText}"
-                           </div>
-                        </div>
-                    )}
-                    <button onClick={() => onDelete(card.id)} className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded-full"><DeleteIcon /></button>
+                        )}
+                        {card.sourceText && (
+                            <div className="relative group/source">
+                               <button className="p-1 hover:bg-slate-200 rounded-full text-slate-400" onClick={(e) => e.stopPropagation()}><SourceIcon/></button>
+                               <div className="absolute top-full right-0 mt-1 bg-slate-800 text-white text-xs p-2 rounded-md shadow-lg w-64 z-10 opacity-0 group-hover/source:opacity-100 pointer-events-none transition-opacity">
+                                    <strong>Source:</strong> "{card.sourceText}"
+                               </div>
+                            </div>
+                        )}
+                        <button onClick={() => onDelete(card.id)} className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded-full"><DeleteIcon /></button>
+                    </div>
                 </div>
-            </div>
-            <div className="flex-grow flex items-center justify-center min-h-[120px] overflow-hidden">
+            )}
+            <div className={`flex-grow flex items-center justify-center min-h-[40px] overflow-hidden relative ${isTextbox ? 'p-1' : 'min-h-[120px]'}`}>
+                {isTextbox && (
+                     <button onClick={() => onDelete(card.id)} className="absolute top-[-8px] right-[-8px] p-1 bg-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-opacity z-10 border shadow-sm">
+                        <DeleteIcon />
+                    </button>
+                )}
                 {card.status === VisualCardStatus.Loading && <div className="loader"></div>}
                 {card.status === VisualCardStatus.Error && <span className="text-red-500 text-sm">Error</span>}
                 {card.status === VisualCardStatus.Loaded && (
                     <>
                         {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain" />}
                         {card.type === 'text' && (isEditing ?
-                            <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className="w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 text-sm" /> :
-                            <div onDoubleClick={() => setIsEditing(true)} className="prose prose-sm text-slate-600 w-full h-full cursor-text"><KatexRenderer content={marked.parse(card.text || '') as string} /></div>
+                            <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className={`w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 ${isTextbox ? 'text-lg' : 'text-sm'}`} /> :
+                            <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text`}><KatexRenderer content={marked.parse(card.text || '') as string} /></div>
                         )}
                         {card.type === 'file' && (
                             <div className="flex flex-col items-center text-center p-2">
@@ -209,6 +234,24 @@ const Modal: React.FC<{ children: React.ReactNode, onClose: () => void, title: s
     </div>
 );
 
+const NewSessionModal: React.FC<{ onClose: () => void, onRecord: () => void, onUpload: () => void }> = ({ onClose, onRecord, onUpload }) => (
+    <Modal onClose={onClose} title="Start Your New Session" icon={<CanopyLogo className="!text-xl" />} widthClass="max-w-lg">
+        <div className="text-center">
+            <p className="text-slate-600 mb-6">How would you like to begin? You can add more content later.</p>
+            <div className="flex flex-col sm:flex-row gap-4">
+                <button onClick={onRecord} className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-[#2f7400] text-white rounded-lg font-semibold hover:bg-[#255b00] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2f7400]">
+                    <MicIcon />
+                    <span>Record Audio</span>
+                </button>
+                <button onClick={onUpload} className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-[#2f7400] text-white rounded-lg font-semibold hover:bg-[#255b00] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2f7400]">
+                    <UploadIcon />
+                    <span>Upload Files</span>
+                </button>
+            </div>
+        </div>
+    </Modal>
+);
+
 const QuizModal: React.FC<{ quiz: Quiz, onClose: () => void }> = ({ quiz, onClose }) => {
     const [answers, setAnswers] = useState<(string | null)[]>(Array(quiz.questions.length).fill(null));
     const [submitted, setSubmitted] = useState(false);
@@ -230,7 +273,7 @@ const QuizModal: React.FC<{ quiz: Quiz, onClose: () => void }> = ({ quiz, onClos
                         {(q.type === QuestionType.FillInTheBlank || q.type === QuestionType.CorrectTheStatement) && (
                             <>
                                 {q.statement && <p className='italic text-slate-500 mb-2'>"{q.statement}"</p>}
-                                <input type="text" onChange={e => handleAnswer(i, e.target.value)} className="w-full p-2 border rounded-md" placeholder='Your answer...' />
+                                <input type="text" onChange={e => handleAnswer(i, e.target.value)} className="w-full p-2 border rounded-md text-slate-500 placeholder:text-slate-400" placeholder='Your answer...' />
                             </>
                         )}
                         {submitted && (
@@ -273,7 +316,10 @@ const RoadmapModal: React.FC<{ roadmap: Roadmap, onClose: () => void, onSetStudy
     </Modal>
 );
 
-const SettingsModal: React.FC<{ streak: number, goal: string, setGoal: (g: string) => void, reminder: string, setReminder: (r: string) => void, onClose: () => void }> = ({ streak, goal, setGoal, reminder, setReminder, onClose }) => (
+const SettingsModal: React.FC<{ 
+    streak: number, goal: string, setGoal: (g: string) => void, reminder: string, setReminder: (r: string) => void, onClose: () => void,
+    summaryDetail: number, setSummaryDetail: (v: number) => void, notepadGenerationCount: number, setNotepadGenerationCount: (v: number) => void
+}> = ({ streak, goal, setGoal, reminder, setReminder, onClose, summaryDetail, setSummaryDetail, notepadGenerationCount, setNotepadGenerationCount }) => (
     <Modal onClose={onClose} title="Settings & Goals" icon={<SettingsIcon />} widthClass="max-w-lg">
         <div className='space-y-6'>
             <div className='flex items-center gap-4 bg-orange-50 p-4 rounded-lg border border-orange-200'>
@@ -290,6 +336,28 @@ const SettingsModal: React.FC<{ streak: number, goal: string, setGoal: (g: strin
             <div>
                 <label className="block font-semibold mb-2">Daily Reminder</label>
                 <input type="time" value={reminder} onChange={e => setReminder(e.target.value)} className="w-full p-2 border rounded-md" />
+            </div>
+            <div className='border-t pt-6'>
+                <h3 className='font-bold text-lg mb-4'>AI Generation Settings</h3>
+                 <div className="space-y-4">
+                    <div>
+                        <label className="font-semibold text-slate-700 flex justify-between items-center mb-1">
+                            <span>Visual versus Text Ratio</span>
+                        </label>
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <span>Text</span>
+                            <input type="range" min="0" max="100" step="25" value={summaryDetail} onChange={e => setSummaryDetail(Number(e.target.value))} className="w-full" />
+                            <span>Visual</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="font-semibold text-slate-700 flex justify-between items-center mb-1">
+                            <span>Number of Auto-Generated Notes</span>
+                            <span className="text-slate-500 font-normal">{notepadGenerationCount} note{notepadGenerationCount === 1 ? '' : 's'}</span>
+                        </label>
+                        <input type="range" min="1" max="10" value={notepadGenerationCount} onChange={e => setNotepadGenerationCount(Number(e.target.value))} className="w-full" />
+                    </div>
+                </div>
             </div>
         </div>
     </Modal>
@@ -341,8 +409,8 @@ const WhiteboardToolbar: React.FC<{
     activeTool: string, setActiveTool: (tool: any) => void, drawColor: string, setDrawColor: (c: string) => void,
     strokeWidth: number, setStrokeWidth: (w: number) => void, lineStyle: 'solid' | 'dashed' | 'dotted', setLineStyle: (s: 'solid' | 'dashed' | 'dotted') => void,
     onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean, onAddFile: () => void, onBackgroundChange: () => void,
-    onColorClick: (color: string) => void
-}> = ({ activeTool, setActiveTool, drawColor, setDrawColor, strokeWidth, setStrokeWidth, lineStyle, setLineStyle, onUndo, onRedo, canUndo, canRedo, onAddFile, onBackgroundChange, onColorClick }) => {
+    onColorClick: (color: string) => void, onWipe: () => void
+}> = ({ activeTool, setActiveTool, drawColor, setDrawColor, strokeWidth, setStrokeWidth, lineStyle, setLineStyle, onUndo, onRedo, canUndo, canRedo, onAddFile, onBackgroundChange, onColorClick, onWipe }) => {
     const ToolButton = ({ tool, icon, title }: { tool: string, icon: React.ReactNode, title: string }) => (
         <button onClick={() => setActiveTool(tool)} className={`p-2 rounded-md ${activeTool === tool ? 'bg-[#2f7400]/20 text-[#2f7400]' : 'hover:bg-slate-200'}`} title={title}>{icon}</button>
     );
@@ -385,10 +453,51 @@ const WhiteboardToolbar: React.FC<{
             <div className="w-px h-6 bg-slate-200 mx-2"></div>
             <button onClick={onUndo} disabled={!canUndo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Undo"><UndoIcon /></button>
             <button onClick={onRedo} disabled={!canRedo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Redo"><RedoIcon /></button>
+            <button onClick={onWipe} className="p-2 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-md" title="Clear Whiteboard"><ClearIcon/></button>
         </div>
     );
 };
 
+const ToastNotification: React.FC<{ toast: Toast, onDismiss: (id: number) => void }> = ({ toast, onDismiss }) => {
+    const [exiting, setExiting] = useState(false);
+
+    const handleDismiss = () => {
+        setExiting(true);
+        setTimeout(() => onDismiss(toast.id), 300);
+    };
+    
+    useEffect(() => {
+        const timer = setTimeout(handleDismiss, 5000);
+        return () => clearTimeout(timer);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const icons = {
+        info: <InfoCircleIcon />,
+        success: <CheckCircleIcon />,
+        error: <XCircleIcon />,
+    };
+    const colors = {
+        info: 'text-blue-500',
+        success: 'text-green-500',
+        error: 'text-red-500',
+    }
+    const progressColors = {
+        info: 'bg-blue-500',
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+    }
+
+    return (
+        <div className={`relative bg-white rounded-lg shadow-lg p-4 flex items-start gap-3 border border-slate-200 overflow-hidden ${exiting ? 'animate-fadeOutRight' : 'animate-fadeInRight'}`}>
+            <div className={colors[toast.type]}>{icons[toast.type]}</div>
+            <div className="flex-grow text-sm text-slate-700 pr-4">{toast.message}</div>
+            <button onClick={handleDismiss} className="absolute top-2 right-2 p-1 -m-1 text-slate-400 hover:text-slate-600"><DeleteIcon /></button>
+            <div className="absolute bottom-0 left-0 h-1 bg-slate-100 w-full">
+                <div className={`h-full ${progressColors[toast.type]} animate-progress`}></div>
+            </div>
+        </div>
+    );
+};
 
 // Fix: Changed to a named export.
 export const App: React.FC = () => {
@@ -403,18 +512,23 @@ export const App: React.FC = () => {
     const [seconds, setSeconds] = useState(0);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [studyStreak, setStudyStreak] = useState(0);
-    const [activeContextTab, setActiveContextTab] = useState<'notes' | 'files'>('notes');
+    const [activeContextTab, setActiveContextTab] = useState<'notes' | 'files' | 'transcription'>('notes');
     const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isContextPanelVisible, setIsContextPanelVisible] = useState(true);
     const [contextPanelWidth, setContextPanelWidth] = useState(384);
+    const [liveTranscript, setLiveTranscript] = useState('');
+    const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
+    const [toasts, setToasts] = useState<Toast[]>([]);
 
     // Toolbox State
     const [activeModalContent, setActiveModalContent] = useState<{ type: 'quiz', data: Quiz } | { type: 'roadmap', data: Roadmap } | {type: 'share'} | null>(null);
     const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
     const [isGeneratingRoadmap, setIsGeneratingRoadmap] = useState(false);
     const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+    const [summaryDetail, setSummaryDetail] = useState(50); // 0 = text, 100 = visual
+    const [notepadGenerationCount, setNotepadGenerationCount] = useState(5);
     
     // Whiteboard State
     type DrawingTool = 'pen' | 'highlighter';
@@ -455,7 +569,7 @@ export const App: React.FC = () => {
             if (savedState) {
                 const state = JSON.parse(savedState);
                 setFolders(state.folders || []);
-                setChats((state.chats || []).map((chat: Chat) => ({ ...chat, quizzes: chat.quizzes || [], roadmaps: chat.roadmaps || [], uploadedFiles: chat.uploadedFiles || [], whiteboardBackground: chat.whiteboardBackground || 'plain' })));
+                setChats((state.chats || []).map((chat: Chat) => ({ ...chat, quizzes: chat.quizzes || [], roadmaps: chat.roadmaps || [], uploadedFiles: chat.uploadedFiles || [], generatedVisuals: chat.generatedVisuals || [], whiteboardBackground: chat.whiteboardBackground || 'plain' })));
                 setActiveChatId(state.activeChatId || null);
             } else { handleNewChat(); }
         } catch (error) { console.error("Failed to load state from localStorage", error); }
@@ -464,61 +578,116 @@ export const App: React.FC = () => {
     useEffect(() => { saveState(); }, [saveState]);
     const updateActiveChat = (updater: (chat: Chat) => Chat) => { setChats(prev => prev.map(c => c.id === activeChatId ? updater(c) : c)); };
     
+    const addToast = (message: string, type: Toast['type'] = 'info') => {
+        const id = Date.now();
+        setToasts(prev => [...prev.slice(-4), { id, message, type }]);
+    };
+
     // --- AI Feature Handlers ---
-    const handleSummarize = async () => {
+    const handleGenerateSummary = async () => {
         if (!activeChat?.contextText) return;
-        setStatus(<span><SparkleIcon /> Generating summary...</span>);
+        setStatus(<span><SparkleIcon /> Generating smart summary...</span>);
         try {
-            let summaryPoints = await geminiService.summarizeText(activeChat.contextText);
-            summaryPoints = summaryPoints.filter(item => item.point && item.source);
+            const [summaryPoints, keywords] = await Promise.all([
+                geminiService.summarizeText(activeChat.contextText),
+                geminiService.extractKeywords(activeChat.contextText)
+            ]);
+
+            const validSummaryPoints = summaryPoints.filter(item => item.point && item.source);
+            
+            const textRatio = (100 - summaryDetail) / 100;
+            const visualRatio = summaryDetail / 100;
+            const numTextCards = Math.round(validSummaryPoints.length * textRatio);
+            const numVisuals = Math.round(keywords.length * visualRatio);
+            
+            const summariesToCreate = validSummaryPoints.slice(0, numTextCards);
+            const visualsToCreate = keywords.slice(0, numVisuals);
 
             let currentCards = [...activeChat.visualCards];
             const newSummaryCards: VisualCard[] = [];
-            for (const item of summaryPoints) {
+            for (const item of summariesToCreate) {
                 const title = (item.point.match(/^\s*##\s*(.*)/)?.[1] || item.point.substring(0, 30) + '...').trim();
                 const newCard: VisualCard = {
-                    id: `card-${Date.now()}-${Math.random()}`,
-                    type: 'text',
-                    keyword: title,
-                    text: item.point,
-                    sourceText: item.source,
-                    status: VisualCardStatus.Loaded,
+                    id: `card-${Date.now()}-${Math.random()}`, type: 'text', keyword: title, text: item.point, sourceText: item.source, status: VisualCardStatus.Loaded,
                     position: findNextLogicalCardPosition(currentCards),
-                    rotation: Math.random() * 4 - 2,
-                    backgroundColor: '#f0fdf4'
+                    rotation: Math.random() * 4 - 2, backgroundColor: '#f0fdf4'
                 };
                 newSummaryCards.push(newCard);
                 currentCards.push(newCard);
             }
-            updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, ...newSummaryCards] }));
-            setStatus("Summary points added to whiteboard.");
+             if (newSummaryCards.length > 0) {
+                updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, ...newSummaryCards] }));
+            }
+            
+            if (visualsToCreate.length > 0) {
+                const newVisuals: GeneratedVisual[] = visualsToCreate.map(keyword => ({
+                    id: `visual-${Date.now()}-${keyword.replace(/\s/g, '-')}`, keyword, status: 'loading'
+                }));
+                updateActiveChat(c => ({ ...c, generatedVisuals: [...(c.generatedVisuals || []), ...newVisuals] }));
+
+                newVisuals.forEach(visual => { 
+                    geminiService.generateVisualForKeyword(visual.keyword, activeChat.contextText)
+                        .then(imageUrl => updateActiveChat(c => ({ ...c, generatedVisuals: c.generatedVisuals?.map(v => v.id === visual.id ? { ...v, status: 'loaded', imageUrl } : v) })))
+                        .catch(err => { console.error(`Failed to generate visual for ${visual.keyword}`, err); updateActiveChat(c => ({ ...c, generatedVisuals: c.generatedVisuals?.map(v => v.id === visual.id ? { ...v, status: 'error' } : v) })); }); 
+                });
+            }
+
+            setStatus(`Generated ${newSummaryCards.length} text summaries and ${visualsToCreate.length} visuals.`);
         } catch (error) {
-            console.error("Failed to generate summary", error);
+            console.error("Failed to generate smart summary", error);
             setStatus("Could not generate summary.");
         }
     };
-    const handleGenerateVisuals = async () => { if (!activeChat?.contextText) return; setStatus(<span><SparkleIcon /> Extracting keywords...</span>); try { const keywords = await geminiService.extractKeywords(activeChat.contextText); if (keywords.length === 0) { setStatus("No keywords found to generate visuals."); return; } setStatus(<span><SparkleIcon /> Found {keywords.length} keywords. Generating images...</span>); 
-    
-        let currentCards = [...activeChat.visualCards];
-        const newCards: VisualCard[] = [];
-        for (const keyword of keywords) {
-            const newCard: VisualCard = {
-                id: `card-${Date.now()}-${keyword.replace(/\s/g, '-')}`,
-                type: 'ai',
+    const handleGenerateVisuals = async () => { 
+        if (!activeChat?.contextText) return; 
+        setStatus(<span><SparkleIcon /> Extracting keywords...</span>); 
+        try { 
+            const keywords = await geminiService.extractKeywords(activeChat.contextText); 
+            if (keywords.length === 0) { setStatus("No keywords found to generate visuals."); return; } 
+            setStatus(<span><SparkleIcon /> Found {keywords.length} keywords. Generating images...</span>); 
+            
+            const newVisuals: GeneratedVisual[] = keywords.map(keyword => ({
+                id: `visual-${Date.now()}-${keyword.replace(/\s/g, '-')}`,
                 keyword,
-                status: VisualCardStatus.Loading,
-                position: findNextLogicalCardPosition(currentCards),
-                rotation: Math.random() * 8 - 4,
-            };
-            newCards.push(newCard);
-            currentCards.push(newCard);
-        }
+                status: 'loading'
+            }));
+            
+            updateActiveChat(c => ({ ...c, generatedVisuals: [...(c.generatedVisuals || []), ...newVisuals] }));
 
-        updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, ...newCards] })); 
-        newCards.forEach(card => { geminiService.generateVisualForKeyword(card.keyword, activeChat.contextText).then(imageUrl => { updateActiveChat(c => ({ ...c, visualCards: c.visualCards.map(vc => vc.id === card.id ? { ...vc, status: VisualCardStatus.Loaded, imageUrl } : vc) })); }).catch(err => { console.error(`Failed to generate visual for ${card.keyword}`, err); updateActiveChat(c => ({ ...c, visualCards: c.visualCards.map(vc => vc.id === card.id ? { ...vc, status: VisualCardStatus.Error, text: 'Failed to load' } : vc) })); }); }); setStatus("Visual generation process started."); } catch (error) { console.error("Failed to extract keywords for visuals", error); setStatus("Could not start visual generation."); } };
+            newVisuals.forEach(visual => { 
+                geminiService.generateVisualForKeyword(visual.keyword, activeChat.contextText)
+                    .then(imageUrl => { 
+                        updateActiveChat(c => ({ ...c, generatedVisuals: c.generatedVisuals?.map(v => v.id === visual.id ? { ...v, status: 'loaded', imageUrl } : v) })); 
+                    })
+                    .catch(err => { 
+                        console.error(`Failed to generate visual for ${visual.keyword}`, err); 
+                        updateActiveChat(c => ({ ...c, generatedVisuals: c.generatedVisuals?.map(v => v.id === visual.id ? { ...v, status: 'error' } : v) })); 
+                    }); 
+            }); 
+            setStatus("Visual generation process started. Check the sidebar."); 
+        } catch (error) { 
+            console.error("Failed to extract keywords for visuals", error); 
+            setStatus("Could not start visual generation."); 
+        } 
+    };
+
+    const handleRegenerateVisual = (cardId: string, keyword: string) => {
+        if (!activeChat?.contextText) return;
+        updateActiveChat(c => ({...c, visualCards: c.visualCards.map(vc => vc.id === cardId ? {...vc, status: VisualCardStatus.Loading } : vc) }));
+        geminiService.generateVisualForKeyword(keyword, activeChat.contextText)
+            .then(imageUrl => {
+                updateActiveChat(c => ({ ...c, visualCards: c.visualCards.map(vc => vc.id === cardId ? { ...vc, status: VisualCardStatus.Loaded, imageUrl } : vc) }));
+            })
+            .catch(err => {
+                console.error(`Failed to regenerate visual for ${keyword}`, err);
+                updateActiveChat(c => ({ ...c, visualCards: c.visualCards.map(vc => vc.id === cardId ? { ...vc, status: VisualCardStatus.Error } : vc) }));
+            });
+    };
+
     const handleGenerateQuiz = async (openModal = true) => {
         if (!activeChat?.contextText) return;
         setIsGeneratingQuiz(true);
+        setStatus(<span><SparkleIcon /> Generating quiz...</span>);
         try {
             const questions = await geminiService.generateQuiz(activeChat.contextText);
             if (questions.length > 0) {
@@ -527,12 +696,14 @@ export const App: React.FC = () => {
                 if (openModal) {
                     setActiveModalContent({ type: 'quiz', data: newQuiz });
                 } else {
-                    setStatus("Quiz automatically generated.");
+                    addToast("Quiz automatically generated.", 'success');
                 }
             }
+            setStatus("Ready.");
         } catch (error) {
             console.error("Failed to generate quiz", error);
-            if (openModal) setStatus("Could not generate quiz.");
+            setStatus("Could not generate quiz.");
+             addToast("Could not generate quiz.", 'error');
         } finally {
             setIsGeneratingQuiz(false);
         }
@@ -540,6 +711,7 @@ export const App: React.FC = () => {
     const handleGenerateRoadmap = async (openModal = true) => {
         if (!activeChat?.contextText) return;
         setIsGeneratingRoadmap(true);
+        setStatus(<span><SparkleIcon /> Generating roadmap...</span>);
         try {
             const { steps, suggestedGoal } = await geminiService.generateLearningRoadmap(activeChat.contextText);
             if (steps.length > 0) {
@@ -548,12 +720,14 @@ export const App: React.FC = () => {
                 if (openModal) {
                     setActiveModalContent({ type: 'roadmap', data: newRoadmap });
                 } else {
-                    setStatus("Roadmap automatically generated.");
+                    addToast("Learning roadmap automatically generated.", 'success');
                 }
             }
+             setStatus("Ready.");
         } catch (error) {
             console.error("Failed to generate roadmap", error);
-            if (openModal) setStatus("Could not generate roadmap.");
+            setStatus("Could not generate roadmap.");
+            addToast("Could not generate roadmap.", 'error');
         } finally {
             setIsGeneratingRoadmap(false);
         }
@@ -571,12 +745,11 @@ export const App: React.FC = () => {
                 setStatus(<span><span className="status-loader"></span> Automatically generating content...</span>);
                 try {
                     const hasSummary = activeChat.visualCards.some(vc => vc.sourceText);
-                    const hasVisuals = activeChat.visualCards.some(vc => vc.type === 'ai');
+                    const hasVisuals = activeChat.generatedVisuals && activeChat.generatedVisuals.length > 0;
                     const hasQuiz = activeChat.quizzes && activeChat.quizzes.length > 0;
                     const hasRoadmap = activeChat.roadmaps && activeChat.roadmaps.length > 0;
 
-                    if (!hasSummary) await handleSummarize();
-                    if (!hasVisuals) await handleGenerateVisuals();
+                    if (!hasSummary && !hasVisuals) await handleGenerateSummary();
                     if (!hasQuiz) await handleGenerateQuiz(false);
                     if (!hasRoadmap) await handleGenerateRoadmap(false);
                 } catch (e) {
@@ -588,13 +761,13 @@ export const App: React.FC = () => {
             }, 5000);
         }
 
-        const autoCategorizeTimeout = (activeChat && !activeChat.folderId && activeChat.contextText.length > 300 && folders.length > 0) ? window.setTimeout(async () => { setStatus(<span><SparkleIcon/> Organizing session...</span>); try { const folderId = await geminiService.categorizeSession(activeChat.contextText, folders.map(f => ({ id: f.id, name: f.name }))); if (folderId) { updateActiveChat(c => ({ ...c, folderId })); setStatus("Session automatically moved to folder."); } else { setStatus("Ready."); } } catch (error) { console.error("Failed to categorize session", error); setStatus("Could not auto-organize session."); } }, 4000) : null;
+        const autoCategorizeTimeout = (activeChat && !activeChat.folderId && activeChat.contextText.length > 300 && folders.length > 0) ? window.setTimeout(async () => { setStatus(<span><SparkleIcon/> Organizing session...</span>); try { const folderId = await geminiService.categorizeSession(activeChat.contextText, folders.map(f => ({ id: f.id, name: f.name }))); if (folderId) { updateActiveChat(c => ({ ...c, folderId })); addToast("Session automatically moved to folder.", 'success'); } else { setStatus("Ready."); } } catch (error) { console.error("Failed to categorize session", error); setStatus("Could not auto-organize session."); } }, 4000) : null;
         
         return () => { if (titleGenerationTimeout) clearTimeout(titleGenerationTimeout); if (autoGenerateTimeoutRef.current) clearTimeout(autoGenerateTimeoutRef.current); if (autoCategorizeTimeout) clearTimeout(autoCategorizeTimeout); }
     }, [activeChat?.contextText, activeChat?.id]); // eslint-disable-line
 
     // --- Chat & Folder Management ---
-    const handleNewChat = () => { const newChat: Chat = { id: `chat-${Date.now()}`, title: `New Session - ${new Date().toLocaleDateString()}`, date: new Date().toISOString(), contextText: '', visualCards: [], summaryPoints: [], quizzes: [], roadmaps: [], uploadedFiles: [], drawingHistory: [], drawingHistoryIndex: -1, whiteboardBackground: 'plain', folderId: null }; setChats(prev => [newChat, ...prev]); setActiveChatId(newChat.id); };
+    const handleNewChat = () => { const newChat: Chat = { id: `chat-${Date.now()}`, title: `New Session - ${new Date().toLocaleDateString()}`, date: new Date().toISOString(), contextText: '', visualCards: [], summaryPoints: [], quizzes: [], roadmaps: [], generatedVisuals: [], uploadedFiles: [], drawingHistory: [], drawingHistoryIndex: -1, whiteboardBackground: 'plain', folderId: null }; setChats(prev => [newChat, ...prev]); setActiveChatId(newChat.id); setIsNewSessionModalOpen(true); };
     const handleNewFolder = () => { const newFolder: Folder = { id: `folder-${Date.now()}`, name: 'New Course Folder', date: new Date().toISOString() }; setFolders(prev => [newFolder, ...prev]); };
     const handleRenameFolder = (folderId: string, newName: string) => { setFolders(folders => folders.map(f => f.id === folderId ? { ...f, name: newName } : f)); };
     const handleDeleteFolder = (folderId: string) => { setFolders(folders => folders.filter(f => f.id !== folderId)); setChats(chats => chats.map(c => c.folderId === folderId ? { ...c, folderId: null } : c)); };
@@ -682,7 +855,7 @@ export const App: React.FC = () => {
             const coords = getCanvasRelativeCoords(e.nativeEvent, container);
 
             if (['pen', 'highlighter', 'eraser'].includes(activeTool)) { mainCtx.lineTo(coords.x, coords.y); mainCtx.stroke(); }
-            else if (['rectangle', 'ellipse', 'line', 'text', 'arrow'].includes(activeTool)) {
+            else if (['rectangle', 'ellipse', 'line', 'arrow', 'notepad'].includes(activeTool)) {
                 previewCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
                 const { lineWidth, strokeStyle } = getBrushStyle(); 
                 previewCtx.lineWidth = lineWidth / panZoomRef.current.scale; 
@@ -691,7 +864,7 @@ export const App: React.FC = () => {
                 previewCtx.lineCap = 'round';
                 previewCtx.lineJoin = 'round';
                 previewCtx.beginPath();
-                if (activeTool === 'rectangle' || activeTool === 'text') previewCtx.rect(drawStartCoords.current.x, drawStartCoords.current.y, coords.x - drawStartCoords.current.x, coords.y - drawStartCoords.current.y);
+                if (['rectangle', 'notepad'].includes(activeTool)) previewCtx.rect(drawStartCoords.current.x, drawStartCoords.current.y, coords.x - drawStartCoords.current.x, coords.y - drawStartCoords.current.y);
                 else if (activeTool === 'ellipse') previewCtx.ellipse(drawStartCoords.current.x + (coords.x - drawStartCoords.current.x) / 2, drawStartCoords.current.y + (coords.y - drawStartCoords.current.y) / 2, Math.abs((coords.x - drawStartCoords.current.x) / 2), Math.abs((coords.y - drawStartCoords.current.y) / 2), 0, 0, 2 * Math.PI);
                 else if (activeTool === 'line') { previewCtx.moveTo(drawStartCoords.current.x, drawStartCoords.current.y); previewCtx.lineTo(coords.x, coords.y); }
                 else if (activeTool === 'arrow') {
@@ -719,34 +892,40 @@ export const App: React.FC = () => {
             const container = whiteboardContainerRef.current;
             if (!mainCtx || !previewCtx || !previewCanvas || !mainCanvas || !container) return;
             
-            if (activeTool === 'text') {
+            const endCoords = getCanvasRelativeCoords(e.nativeEvent, container);
+            const startCoords = drawStartCoords.current;
+            const width = Math.abs(endCoords.x - startCoords.x);
+            const height = Math.abs(endCoords.y - startCoords.y);
+            const distance = Math.sqrt(width * width + height * height);
+
+            if (activeTool === 'text' && distance < 5) { // Single click
                 previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-                const endCoords = getCanvasRelativeCoords(e.nativeEvent, container);
-                const startCoords = drawStartCoords.current;
-                const width = Math.abs(endCoords.x - startCoords.x);
-                const height = Math.abs(endCoords.y - startCoords.y);
+                const newCard: VisualCard = {
+                    id: `card-${Date.now()}`, type: 'text', keyword: 'Text', text: 'Start typing...',
+                    status: VisualCardStatus.Loaded, position: { top: startCoords.y - 10, left: startCoords.x - 10 }, rotation: 0,
+                    backgroundColor: 'transparent', width: 200, height: 50, newlyCreated: true,
+                };
+                updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, newCard] }));
+                setActiveTool('select');
+            } else if (activeTool === 'notepad') { // Drag to create
+                previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
                 if (width > 10 && height > 10) {
-                    const newCard: VisualCard = { id: `card-${Date.now()}`, type: 'text', keyword: '', text: 'Type here...', status: VisualCardStatus.Loaded, position: { top: Math.min(startCoords.y, endCoords.y), left: Math.min(startCoords.x, endCoords.x)}, rotation: 0, backgroundColor: 'transparent', width, height };
+                    const newCard: VisualCard = {
+                        id: `card-${Date.now()}`, type: 'text', keyword: 'New Note', text: 'Double click to edit...',
+                        status: VisualCardStatus.Loaded, position: { top: Math.min(startCoords.y, endCoords.y), left: Math.min(startCoords.x, endCoords.x) },
+                        rotation: Math.random() * 4 - 2, backgroundColor: '#fef9c3', width, height,
+                    };
                     updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, newCard] }));
                 }
                 setActiveTool('select');
-
             } else if (['rectangle', 'ellipse', 'line', 'arrow'].includes(activeTool)) { 
                 mainCtx.drawImage(previewCanvas, 0, 0); 
                 previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height); 
                 saveCanvasState();
-            } else {
+            } else { // Pen, highlighter, eraser
                  saveCanvasState();
             }
 
-        } else if (['notepad', 'text'].includes(activeTool)) {
-            const container = whiteboardContainerRef.current;
-            if (!container) return;
-            const cardPos = getCanvasRelativeCoords(e.nativeEvent, container);
-            // Fix: Mapped the {x, y} coordinates from getCanvasRelativeCoords
-            // to the {top, left} expected by handleAddTextCard.
-            handleAddTextCard({ top: cardPos.y, left: cardPos.x });
-            setActiveTool('select');
         }
     };
     
@@ -817,7 +996,20 @@ export const App: React.FC = () => {
     }, []);
     const handleUndo = () => { if (!activeChat || (activeChat.drawingHistoryIndex ?? 0) <= 0) return; const newIndex = (activeChat.drawingHistoryIndex ?? 0) - 1; updateActiveChat(c => ({ ...c, drawingHistoryIndex: newIndex })); redrawCanvasFromHistory(activeChat.drawingHistory![newIndex]); };
     const handleRedo = () => { if (!activeChat || (activeChat.drawingHistoryIndex ?? -1) >= (activeChat.drawingHistory?.length ?? 0) - 1) return; const newIndex = (activeChat.drawingHistoryIndex ?? -1) + 1; updateActiveChat(c => ({...c, drawingHistoryIndex: newIndex })); redrawCanvasFromHistory(activeChat.drawingHistory![newIndex]); };
-    
+    const handleWipeWhiteboard = () => {
+        if (!activeChat || !canvasRef.current) return;
+        if (!window.confirm("Are you sure you want to clear the entire whiteboard? This action can be undone.")) {
+            return;
+        }
+        updateActiveChat(c => ({ ...c, visualCards: [] }));
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            saveCanvasState();
+        }
+    };
+
     // --- Context Panel Resizing ---
     const handleResizeMouseDown = (e: React.MouseEvent) => { isResizingRef.current = true; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; };
     useEffect(() => {
@@ -841,11 +1033,48 @@ export const App: React.FC = () => {
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'context' | 'whiteboard') => {
         const file = event.target.files?.[0]; if (!file || !activeChatId || !activeChat) { if (event.target) event.target.value = ''; return; }
         setStatus(`Processing ${file.name}...`);
-        try { const { text, type, url } = await handleParseFile(file);
+        try { 
+            const { text, type, url } = await handleParseFile(file);
             const newFile: UploadedFile = { id: `file-${Date.now()}`, name: file.name, type, content: text, url };
             updateActiveChat(c => ({...c, uploadedFiles: [...(c.uploadedFiles || []), newFile] }));
-            if (target === 'context') { updateActiveChat(c => ({ ...c, contextText: (c.contextText + '\n\n' + text).trim() })); setStatus(`Successfully imported content from ${file.name}.`); setActiveFileId(newFile.id); setActiveContextTab('files'); }
-            else { 
+
+            if (target === 'context') { 
+                updateActiveChat(c => ({ ...c, contextText: (c.contextText + '\n\n' + text).trim() })); 
+                setStatus(`Successfully imported content from ${file.name}.`); 
+                setActiveFileId(newFile.id); 
+                setActiveContextTab('files'); 
+
+                if (text && ['pdf', 'docx', 'txt'].includes(type) && notepadGenerationCount > 0) {
+                    setStatus(<span><SparkleIcon /> Generating summary notes from {file.name}...</span>);
+                    try {
+                        const notes = await geminiService.generateNotepadsFromText(text, notepadGenerationCount);
+                        if (notes.length > 0) {
+                            let currentCards = [...(activeChat.visualCards || [])];
+                            const newNotepadCards: VisualCard[] = [];
+                            for (const note of notes) {
+                                const newCard: VisualCard = {
+                                    id: `card-${Date.now()}-${Math.random()}`,
+                                    type: 'text',
+                                    keyword: note.title,
+                                    text: note.content,
+                                    status: VisualCardStatus.Loaded,
+                                    position: findNextLogicalCardPosition(currentCards),
+                                    rotation: Math.random() * 4 - 2,
+                                    backgroundColor: '#fef9c3', // Sticky note yellow
+                                };
+                                newNotepadCards.push(newCard);
+                                currentCards.push(newCard); // Update for next position calculation
+                            }
+                            updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, ...newNotepadCards] }));
+                            addToast(`Added ${notes.length} summary notes to the whiteboard.`, 'success');
+                            setStatus("Ready.");
+                        }
+                    } catch (err) {
+                        console.error("Failed to generate notepads from file", err);
+                        setStatus(`Failed to generate notes from ${file.name}.`);
+                    }
+                }
+            } else { 
                 const position = findNextLogicalCardPosition(activeChat.visualCards);
                 const newCard: VisualCard = { 
                     id: `card-${Date.now()}`, 
@@ -874,7 +1103,7 @@ export const App: React.FC = () => {
 
         const CARD_WIDTH = 220;
         const CARD_HEIGHT = 220;
-        const PADDING = 30;
+        const PADDING = 40;
 
         const existingRects = existingCards.map(card => {
             const width = card.width || CARD_WIDTH;
@@ -920,7 +1149,19 @@ export const App: React.FC = () => {
         return { top: viewTop + PADDING, left: viewLeft + PADDING + Math.random() * 50 }; 
     };
 
-    const handleAddTextCard = (position?: {top: number, left: number}) => { if (!activeChat) return; const newCard: VisualCard = { id: `card-${Date.now()}`, type: 'text', keyword: 'New Note', text: 'Double click to edit...', status: VisualCardStatus.Loaded, position: position || findNextLogicalCardPosition(activeChat.visualCards), rotation: Math.random() * 4 - 2, backgroundColor: '#fef9c3' }; updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, newCard] })); };
+    const handleAddVisualToWhiteboard = (visual: GeneratedVisual) => {
+        if (!activeChat || !visual.imageUrl) return;
+        const newCard: VisualCard = {
+            id: `card-${Date.now()}-${visual.keyword}`,
+            type: 'ai',
+            keyword: visual.keyword,
+            status: VisualCardStatus.Loaded,
+            imageUrl: visual.imageUrl,
+            position: findNextLogicalCardPosition(activeChat.visualCards),
+            rotation: Math.random() * 8 - 4
+        };
+        updateActiveChat(c => ({...c, visualCards: [...c.visualCards, newCard]}));
+    };
 
     const getBrushStyle = () => {
         switch(activeTool) {
@@ -929,6 +1170,7 @@ export const App: React.FC = () => {
             case 'highlighter': return { lineWidth: strokeWidth, strokeStyle: drawColor, globalCompositeOperation: 'multiply' as GlobalCompositeOperation };
             case 'eraser': return { lineWidth: strokeWidth * 2, strokeStyle: '#000', globalCompositeOperation: 'destination-out' as GlobalCompositeOperation };
             case 'text': return { lineWidth: 1, strokeStyle: '#60a5fa', globalCompositeOperation: 'source-over' as GlobalCompositeOperation }; // For preview rect
+            case 'notepad': return { lineWidth: 1, strokeStyle: '#facc15', globalCompositeOperation: 'source-over' as GlobalCompositeOperation }; // For preview rect
             default: return { lineWidth: strokeWidth, strokeStyle: drawColor, globalCompositeOperation: 'source-over' as GlobalCompositeOperation };
         }
     };
@@ -939,26 +1181,80 @@ export const App: React.FC = () => {
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
+        
         recognition.onresult = (event: any) => {
             let interimTranscript = '';
+            let finalTranscriptFromEvent = '';
+    
             for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const transcriptPart = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
-                    finalTranscriptRef.current += event.results[i][0].transcript + '. ';
+                    finalTranscriptFromEvent += transcriptPart;
                 } else {
-                    interimTranscript += event.results[i][0].transcript;
+                    interimTranscript += transcriptPart;
                 }
             }
-            if (activeChatId) updateActiveChat(c => ({ ...c, contextText: finalTranscriptRef.current + interimTranscript }));
+    
+            if (finalTranscriptFromEvent) {
+                finalTranscriptRef.current += finalTranscriptFromEvent.trim() + ' ';
+            }
+            
+            setLiveTranscript(finalTranscriptRef.current + interimTranscript);
         };
+
         recognition.onerror = (event: any) => { console.error("Speech recognition error", event.error); setStatus(`Speech recognition error: ${event.error}`); };
         recognition.onend = () => { if (recognitionOnEndCallbackRef.current) recognitionOnEndCallbackRef.current(); };
         recognitionRef.current = recognition;
-    }, [activeChatId]); // eslint-disable-line
+    }, []);
 
-    const startRecording = () => { if (!recognitionRef.current) return; setIsRecording(true); setIsPaused(false); setSeconds(0); finalTranscriptRef.current = activeChat?.contextText || ''; recognitionRef.current.start(); timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000); recognitionOnEndCallbackRef.current = startRecording; };
-    const stopRecording = () => { if (!recognitionRef.current) return; recognitionOnEndCallbackRef.current = undefined; recognitionRef.current.stop(); setIsRecording(false); setIsPaused(false); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
-    const pauseRecording = () => { if (!recognitionRef.current) return; recognitionOnEndCallbackRef.current = undefined; recognitionRef.current.stop(); setIsPaused(true); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
-    const resumeRecording = () => { if (!recognitionRef.current) return; startRecording(); };
+    const startRecording = () => {
+        if (!recognitionRef.current) return;
+        setLiveTranscript('');
+        finalTranscriptRef.current = '';
+
+        setIsRecording(true);
+        setIsPaused(false);
+        setSeconds(0);
+        setActiveContextTab('transcription');
+    
+        recognitionRef.current.start();
+        timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
+        recognitionOnEndCallbackRef.current = startRecording;
+    };
+
+    const endCurrentRecordingSegment = useCallback(() => {
+        if (!recognitionRef.current) return;
+        recognitionOnEndCallbackRef.current = undefined;
+        recognitionRef.current.stop();
+        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+
+        const capturedText = finalTranscriptRef.current.trim();
+        if (capturedText) {
+            updateActiveChat(c => {
+                const newContextText = (c.contextText.trim() ? c.contextText + ' ' : '') + capturedText;
+                return { ...c, contextText: newContextText };
+            });
+        }
+    }, [activeChatId]);
+
+    const stopRecording = () => {
+        endCurrentRecordingSegment();
+        setIsRecording(false);
+        setIsPaused(false);
+    };
+    
+    const pauseRecording = () => {
+        endCurrentRecordingSegment();
+        setIsPaused(true);
+    };
+    
+    const resumeRecording = () => {
+        if (!recognitionRef.current) return;
+        setIsPaused(false);
+        recognitionRef.current.start();
+        timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
+        recognitionOnEndCallbackRef.current = startRecording;
+    };
     
     useEffect(() => {
         if (activeTool === 'pen' || activeTool === 'highlighter') {
@@ -991,6 +1287,23 @@ export const App: React.FC = () => {
                             <GridIcon />
                             <span className="truncate">Whiteboard</span>
                         </div>
+                        <button onClick={() => { setIsContextPanelVisible(true); setActiveContextTab('notes'); }} className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded">
+                           <NoteIcon />
+                           <span className="truncate">Source Notes</span>
+                        </button>
+                        {(chat.uploadedFiles && chat.uploadedFiles.length > 0) && chat.uploadedFiles.map(file => (
+                            <button key={file.id} onClick={() => { setIsContextPanelVisible(true); setActiveContextTab('files'); setActiveFileId(file.id); }} className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded">
+                                <FileIcon />
+                                <span className="truncate">{file.name}</span>
+                            </button>
+                        ))}
+                         {(chat.generatedVisuals && chat.generatedVisuals.length > 0) && chat.generatedVisuals.map((visual, index) => (
+                            <button key={visual.id} onClick={() => handleAddVisualToWhiteboard(visual)} disabled={visual.status !== 'loaded'} className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                                {visual.status === 'loading' ? <div className='status-loader !w-3.5 !h-3.5 !mr-0'></div> : <ImageIcon />}
+                                <span className="truncate flex-grow">{visual.keyword}</span>
+                                {visual.status === 'error' && <span className="text-red-500 text-xs">Failed</span>}
+                            </button>
+                        ))}
                         {(chat.quizzes && chat.quizzes.length > 0) && chat.quizzes.map((quiz, index) => (
                             <button key={quiz.id} onClick={() => setActiveModalContent({ type: 'quiz', data: quiz })} className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded">
                                 <QuizIcon />
@@ -1014,12 +1327,19 @@ export const App: React.FC = () => {
 
     return (
     <div className="w-screen h-screen flex bg-slate-50 text-slate-800">
-        {isSettingsOpen && <SettingsModal streak={studyStreak} goal={activeChat?.studyGoal || ''} setGoal={val => updateActiveChat(c => ({...c, studyGoal: val}))} reminder={activeChat?.reminderTime || '09:00'} setReminder={val => updateActiveChat(c => ({...c, reminderTime: val}))} onClose={() => setIsSettingsOpen(false)} />}
+        {isSettingsOpen && <SettingsModal streak={studyStreak} goal={activeChat?.studyGoal || ''} setGoal={val => updateActiveChat(c => ({...c, studyGoal: val}))} reminder={activeChat?.reminderTime || '09:00'} setReminder={val => updateActiveChat(c => ({...c, reminderTime: val}))} onClose={() => setIsSettingsOpen(false)} summaryDetail={summaryDetail} setSummaryDetail={setSummaryDetail} notepadGenerationCount={notepadGenerationCount} setNotepadGenerationCount={setNotepadGenerationCount} />}
         {activeModalContent?.type === 'quiz' && <QuizModal quiz={activeModalContent.data} onClose={() => setActiveModalContent(null)} />}
         {activeModalContent?.type === 'roadmap' && <RoadmapModal roadmap={activeModalContent.data} onSetStudyGoal={(goal) => {updateActiveChat(c => ({...c, studyGoal: goal})); setStatus("Study goal updated!");}} onClose={() => setActiveModalContent(null)} />}
-        {activeModalContent?.type === 'share' && <ShareModal chat={activeChat} whiteboardEl={whiteboardContainerRef.current} onClose={() => setActiveModalContent(null)} />}
+        {activeModalContent?.type === 'share' && <ShareModal chat={activeChat} whiteboardEl={whiteboardRef.current} onClose={() => setActiveModalContent(null)} />}
+        {isNewSessionModalOpen && <NewSessionModal onClose={() => setIsNewSessionModalOpen(false)} onRecord={() => { startRecording(); setIsNewSessionModalOpen(false); }} onUpload={() => { (fileInputRef.current as any)._target = 'context'; fileInputRef.current?.click(); setIsNewSessionModalOpen(false); }} />}
         <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, (e.target as any)._target)} className="hidden" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" />
         
+        <div className="absolute top-4 right-4 z-[100] w-80 space-y-2">
+            {toasts.map(toast => (
+                <ToastNotification key={toast.id} toast={toast} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
+            ))}
+        </div>
+
         <aside className={`bg-slate-100 border-r border-slate-200 flex flex-col h-full shrink-0 transition-all duration-300 ${isSidebarCollapsed ? 'w-0' : 'w-64'}`}>
             <div className="p-4 border-b border-slate-200 flex-shrink-0">
                 <CanopyLogo className="h-8 w-auto" />
@@ -1050,100 +1370,74 @@ export const App: React.FC = () => {
         </aside>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-            {!activeChat ? <div className="w-full h-full flex items-center justify-center text-slate-400 text-lg">Select or create a session to begin</div> : (
-            <>
-                <header className="p-3 bg-white border-b border-slate-200 flex justify-between items-center z-20 shrink-0 gap-4 h-16">
-                    <div className='flex items-center gap-2 flex-1 min-w-0'>
-                        {isSidebarCollapsed && <button onClick={() => setIsSidebarCollapsed(false)} title="Expand Sidebar" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><div className='transform rotate-180'><SidebarCollapseIcon/></div></button>}
-                        <input type="text" value={activeChat.title} onChange={e => updateActiveChat(c => ({...c, title: e.target.value}))} className="text-xl font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-[#2f7400] rounded-md -ml-2 px-2 py-1 w-full min-w-0" />
-                    </div>
-                                        
-                    <div className="flex items-center gap-2 shrink-0">
-                         <button onClick={() => setActiveModalContent({type: 'share'})} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg" title="Share or Export"><ShareIcon/></button>
-                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg" title="Settings"><SettingsIcon/></button>
-                         <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                         <button onClick={() => setIsContextPanelVisible(!isContextPanelVisible)} title={isContextPanelVisible ? "Hide Context Panel" : "Show Context Panel"} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
-                            <div className={`transform transition-transform ${isContextPanelVisible ? '' : 'rotate-180'}`}><SidebarCollapseIcon/></div>
-                        </button>
-                    </div>
-                </header>
+            {!activeChat ? (
+                <div className="w-full h-full flex items-center justify-center text-slate-400 text-lg">Select or create a session to begin</div>
+            ) : (
+                <>
+                    <header className="p-3 bg-white border-b border-slate-200 flex justify-between items-center z-20 shrink-0 gap-4 h-16">
+                        <div className='flex items-center gap-2 flex-1 min-w-0'>
+                            {isSidebarCollapsed && <button onClick={() => setIsSidebarCollapsed(false)} title="Expand Sidebar" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><div className='transform rotate-180'><SidebarCollapseIcon/></div></button>}
+                            <input type="text" value={activeChat.title} onChange={e => updateActiveChat(c => ({...c, title: e.target.value}))} className="text-xl font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-[#2f7400] rounded-md -ml-2 px-2 py-1 w-full min-w-0" />
+                        </div>
+                                            
+                        <div className="flex items-center gap-2 shrink-0">
+                             <button onClick={() => setActiveModalContent({type: 'share'})} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg" title="Share or Export"><ShareIcon/></button>
+                             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg" title="Settings"><SettingsIcon/></button>
+                             <div className="w-px h-6 bg-slate-200 mx-1"></div>
+                             <button onClick={() => setIsContextPanelVisible(!isContextPanelVisible)} title={isContextPanelVisible ? "Hide Context Panel" : "Show Context Panel"} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                                <div className={`transform transition-transform ${isContextPanelVisible ? '' : 'rotate-180'}`}><SidebarCollapseIcon/></div>
+                            </button>
+                        </div>
+                    </header>
 
-                <main className="flex-grow w-full flex overflow-hidden bg-slate-200/50">
-                     <div className="flex-grow h-full flex flex-col relative p-4 pr-2">
-                        <WhiteboardToolbar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} strokeWidth={strokeWidth} setStrokeWidth={setStrokeWidth} lineStyle={lineStyle} setLineStyle={setLineStyle} onUndo={handleUndo} onRedo={handleRedo} canUndo={(activeChat.drawingHistoryIndex ?? 0) > 0} canRedo={(activeChat.drawingHistoryIndex ?? -1) < (activeChat.drawingHistory?.length ?? 0) -1} onAddFile={() => {(fileInputRef.current as any)._target = 'whiteboard'; fileInputRef.current?.click()}} onBackgroundChange={() => updateActiveChat(c => ({ ...c, whiteboardBackground: c.whiteboardBackground === 'plain' ? 'grid' : c.whiteboardBackground === 'grid' ? 'lined' : 'plain' }))} onColorClick={handleColorClick} />
-                        <div ref={whiteboardContainerRef} onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} className={`flex-grow w-full h-full overflow-hidden relative bg-white rounded-b-lg border border-slate-200 shadow-sm ${activeChat?.whiteboardBackground === 'grid' ? 'bg-grid' : ''} ${activeChat?.whiteboardBackground === 'lined' ? 'bg-lined' : ''} cursor-${activeTool === 'select' ? 'grab' : 'crosshair'} active:cursor-${activeTool === 'select' ? 'grabbing' : 'crosshair'}`}>
-                            <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200">
-                                <button onClick={() => handleZoom('in')} className="p-2 rounded-md hover:bg-slate-100" title="Zoom In"><ZoomInIcon/></button>
-                                <button onClick={() => handleZoom('out')} className="p-2 rounded-md hover:bg-slate-100" title="Zoom Out"><ZoomOutIcon/></button>
-                                <button onClick={handleToggleFullScreen} className="p-2 rounded-md hover:bg-slate-100" title="Full Screen"><FullScreenIcon/></button>
+                    <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-4 z-10 shrink-0">
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-slate-100 rounded-md flex items-center gap-2 text-sm font-semibold text-slate-600">
+                                <SparkleIcon /> AI Tools
                             </div>
-                             <div className="w-full h-full transform-origin-top-left relative pointer-events-none">
-                                <div ref={whiteboardRef} className="absolute top-0 left-0 w-full h-full pointer-events-auto">
-                                    {activeChat.visualCards.map(card => <VisualCardComponent key={card.id} card={card} scale={panZoomRef.current.scale} onDelete={(id) => updateActiveChat(c => ({...c, visualCards: c.visualCards.filter(v => v.id !== id)}))} onUpdate={updatedCard => updateActiveChat(c => ({...c, visualCards: c.visualCards.map(v => v.id === updatedCard.id ? updatedCard : v)}))} />)}
-                                </div>
-                                <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full z-10"></canvas>
-                                <canvas ref={previewCanvasRef} className="absolute top-0 left-0 w-full h-full z-20"></canvas>
+                            <div className="grid grid-cols-4 gap-2 text-sm">
+                                <button onClick={handleGenerateSummary} disabled={isAiDisabled} className="px-3 py-1.5 rounded-md flex items-center gap-2 bg-white hover:bg-slate-100 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"><NoteIcon /> Summary</button>
+                                <button onClick={handleGenerateVisuals} disabled={isAiDisabled} className="px-3 py-1.5 rounded-md flex items-center gap-2 bg-white hover:bg-slate-100 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"><PaletteIcon /> Visuals</button>
+                                <button onClick={() => handleGenerateQuiz(true)} disabled={isAiDisabled || isGeneratingQuiz} className="px-3 py-1.5 rounded-md flex items-center gap-2 bg-white hover:bg-slate-100 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">{isGeneratingQuiz ? <div className='status-loader'></div> : <QuizIcon />} Quiz</button>
+                                <button onClick={() => handleGenerateRoadmap(true)} disabled={isAiDisabled || isGeneratingRoadmap} className="px-3 py-1.5 rounded-md flex items-center gap-2 bg-white hover:bg-slate-100 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">{isGeneratingRoadmap ? <div className='status-loader'></div> : <RoadmapIcon />} Roadmap</button>
                             </div>
                         </div>
-                     </div>
-                     
-                    {isContextPanelVisible && (
-                        <>
-                        <div onMouseDown={handleResizeMouseDown} className="w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0">
-                            <div className="w-px h-12 bg-slate-300 rounded-full"></div>
+                        <div className="text-sm text-slate-500 flex-shrink-0 min-w-0">
+                            <div className="truncate">{status}</div>
                         </div>
-                        <aside style={{ width: contextPanelWidth }} className="h-full flex flex-col bg-white shrink-0 p-4 pl-2">
-                            <div className="bg-slate-100 rounded-lg p-1 flex-grow flex flex-col border border-slate-200/80">
-                                <div className='p-2 pb-1 border-b border-slate-200'>
-                                    <div className="p-1 bg-slate-200 rounded-md flex items-center gap-2 justify-center text-sm font-semibold text-slate-600 mb-2">
-                                        <SparkleIcon/> AI Tools
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                        <button onClick={handleSummarize} disabled={isAiDisabled} className="p-2 rounded-md flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"><NoteIcon/> Summarize</button>
-                                        <button onClick={handleGenerateVisuals} disabled={isAiDisabled} className="p-2 rounded-md flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"><PaletteIcon/> Visuals</button>
-                                        <button onClick={() => handleGenerateQuiz(true)} disabled={isAiDisabled || isGeneratingQuiz} className="p-2 rounded-md flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">{isGeneratingQuiz ? <div className='status-loader'></div> : <QuizIcon/>} Quiz</button>
-                                        <button onClick={() => handleGenerateRoadmap(true)} disabled={isAiDisabled || isGeneratingRoadmap} className="p-2 rounded-md flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">{isGeneratingRoadmap ? <div className='status-loader'></div> : <RoadmapIcon/>} Roadmap</button>
-                                    </div>
+                    </div>
+
+
+                    <main className="flex-grow w-full flex overflow-hidden bg-slate-200/50">
+                        <div className="flex-grow h-full flex flex-col relative p-4 pr-2">
+                            <WhiteboardToolbar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} strokeWidth={strokeWidth} setStrokeWidth={setStrokeWidth} lineStyle={lineStyle} setLineStyle={setLineStyle} onUndo={handleUndo} onRedo={handleRedo} canUndo={(activeChat.drawingHistoryIndex ?? 0) > 0} canRedo={(activeChat.drawingHistoryIndex ?? -1) < (activeChat.drawingHistory?.length ?? 0) -1} onAddFile={() => {(fileInputRef.current as any)._target = 'whiteboard'; fileInputRef.current?.click()}} onBackgroundChange={() => updateActiveChat(c => ({ ...c, whiteboardBackground: c.whiteboardBackground === 'plain' ? 'grid' : c.whiteboardBackground === 'grid' ? 'lined' : 'plain' }))} onColorClick={handleColorClick} onWipe={handleWipeWhiteboard} />
+                            <div ref={whiteboardContainerRef} onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} className={`flex-grow w-full h-full overflow-hidden relative bg-white rounded-b-lg border border-slate-200 shadow-sm ${activeChat?.whiteboardBackground === 'grid' ? 'bg-grid' : ''} ${activeChat?.whiteboardBackground === 'lined' ? 'bg-lined' : ''} cursor-${activeTool === 'select' ? 'grab' : 'crosshair'} active:cursor-${activeTool === 'select' ? 'grabbing' : 'crosshair'}`}>
+                                <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200">
+                                    <button onClick={() => handleZoom('in')} className="p-2 rounded-md hover:bg-slate-100" title="Zoom In"><ZoomInIcon/></button>
+                                    <button onClick={() => handleZoom('out')} className="p-2 rounded-md hover:bg-slate-100" title="Zoom Out"><ZoomOutIcon/></button>
+                                    <button onClick={handleToggleFullScreen} className="p-2 rounded-md hover:bg-slate-100" title="Full Screen"><FullScreenIcon/></button>
                                 </div>
-                                <div className="flex items-center p-2 border-b border-slate-200">
-                                    <div className="flex-1">
-                                        <button onClick={() => setActiveContextTab('notes')} className={`px-3 py-1 text-sm rounded-l-md ${activeContextTab === 'notes' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Source Notes</button>
-                                        <button onClick={() => setActiveContextTab('files')} className={`px-3 py-1 text-sm rounded-r-md ${activeContextTab === 'files' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Files ({activeChat.uploadedFiles?.length || 0})</button>
-                                    </div>
-                                    <button onClick={() => { (fileInputRef.current as any)._target = 'context'; fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1 bg-white text-slate-600 rounded-md text-sm hover:bg-slate-50 transition-colors border border-slate-200"><UploadIcon />Add</button>
+                                 <div ref={whiteboardRef} className="w-full h-full transform-origin-top-left relative pointer-events-auto">
+                                    {activeChat.visualCards.map(card => <VisualCardComponent key={card.id} card={card} scale={panZoomRef.current.scale} onDelete={(id) => updateActiveChat(c => ({...c, visualCards: c.visualCards.filter(v => v.id !== id)}))} onUpdate={updatedCard => updateActiveChat(c => ({...c, visualCards: c.visualCards.map(v => v.id === updatedCard.id ? updatedCard : v)}))} onRegenerate={handleRegenerateVisual} />)}
+                                    <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"></canvas>
+                                    <canvas ref={previewCanvasRef} className="absolute top-0 left-0 w-full h-full z-20 pointer-events-none"></canvas>
                                 </div>
-                                 <div className="p-2 border-b border-slate-200">
-                                    {!isRecording && <button id="mic-button" onClick={startRecording} className="group w-full relative flex items-center justify-center gap-2 p-2 bg-white hover:bg-slate-50 rounded-md border-2 border-slate-200 transition-all text-sm font-semibold text-slate-600"><MicIcon /> Record Audio</button>}
-                                    {isRecording && (
-                                        <div className="flex items-center justify-between gap-4 px-4 py-2 rounded-md bg-white border border-slate-200">
-                                            <div className="flex items-center">
-                                                <div className="w-3 h-3 rounded-full bg-red-500 mr-2 animate-pulse"></div>
-                                                <span className="font-mono text-slate-700">{formatTime(seconds)}</span>
-                                            </div>
-                                            <div className="flex items-center">
-                                                {isPaused ? (
-                                                    <button onClick={resumeRecording} className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-full" title="Resume Recording"><PlayIcon /></button>
-                                                ) : (
-                                                    <button onClick={pauseRecording} className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-full" title="Pause Recording"><PauseIcon /></button>
-                                                )}
-                                                <button onClick={stopRecording} className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-100 rounded-full" title="Stop Recording"><StopIcon /></button>
-                                            </div>
+                            </div>
+                        </div>
+                         
+                        {isContextPanelVisible && (
+                            <>
+                            <div onMouseDown={handleResizeMouseDown} className="w-1.5 h-full cursor-col-resize flex items-center justify-center shrink-0">
+                                <div className="w-px h-12 bg-slate-300 rounded-full"></div>
+                            </div>
+                            <aside style={{ width: contextPanelWidth }} className="h-full flex flex-col bg-white shrink-0 p-4 pl-2">
+                                <div className="bg-slate-100 rounded-lg p-1 flex-grow flex flex-col border border-slate-200/80">
+                                    <div className="flex items-center p-2 border-b border-slate-200">
+                                        <div className="flex-1 flex-nowrap overflow-x-auto">
+                                            <button onClick={() => setActiveContextTab('notes')} className={`px-3 py-1 text-sm rounded-l-md ${activeContextTab === 'notes' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Notes</button>
+                                            <button onClick={() => setActiveContextTab('transcription')} className={`px-3 py-1 text-sm ${activeContextTab === 'transcription' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Transcription</button>
+                                            <button onClick={() => setActiveContextTab('files')} className={`px-3 py-1 text-sm rounded-r-md ${activeContextTab === 'files' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Files ({activeChat.uploadedFiles?.length || 0})</button>
                                         </div>
-                                    )}
-                                </div>
-                                <div className="flex-grow p-1 overflow-y-auto">
-                                    {activeContextTab === 'notes' && (
-                                        <textarea value={activeChat.contextText} onChange={e => updateActiveChat(c => ({ ...c, contextText: e.target.value }))} placeholder="Record your lecture or paste notes here..." className="w-full h-full p-3 bg-white rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-[#2f7400]/50 text-sm leading-relaxed" />
-                                    )}
-                                    {activeContextTab === 'files' && <FileList files={activeChat.uploadedFiles || []} activeFileId={activeFileId} onSelectFile={setActiveFileId} />}
-                                </div>
-                            </div>
-                        </aside>
-                    )}
-                </main>
-            </>
-            )}
-        </div>
-    </div>
-    );
-};
+                                        <button onClick={() => { (fileInputRef.current as any)._target = 'context'; fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1 bg-[#2f7400] text-white rounded-md text-sm font-semibold hover:bg-[#255b00] transition-colors shrink-0"><UploadIcon />Add</button>
+                                    </div>
+                                     <div
