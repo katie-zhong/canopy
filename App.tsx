@@ -12,7 +12,8 @@ import {
     ChevronDownIcon, ChevronRightIcon, SelectIcon, TextIcon, UndoIcon, RedoIcon,
     RectangleIcon, EllipseIcon, LineIcon, ArrowIcon, FileIcon, SidebarCollapseIcon, SourceIcon, PaletteIcon,
     CanopyLogo, ZoomInIcon, ZoomOutIcon, FullScreenIcon, ClearIcon,
-    NoteIcon, RefreshIcon, ImageIcon, CheckCircleIcon, XCircleIcon, InfoCircleIcon
+    NoteIcon, RefreshIcon, ImageIcon, CheckCircleIcon, XCircleIcon, InfoCircleIcon,
+    AiLassoIcon, LightbulbIcon, BookOpenIcon, ConnectIcon, BrainIcon, CritiqueIcon
 } from './components/Icons';
 
 // Extend the Window interface for external libraries
@@ -44,7 +45,17 @@ const KatexRenderer: React.FC<{ content: string, className?: string }> = ({ cont
     return <div ref={renderRef} className={className}></div>;
 };
 
-const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void, onRegenerate: (id: string, keyword: string) => void }> = ({ card, scale, onDelete, onUpdate, onRegenerate }) => {
+// Markdown Renderer that handles Math via Katex
+const MarkdownRenderer: React.FC<{ content: string, className?: string }> = ({ content, className }) => {
+    const [parsedHtml, setParsedHtml] = useState('');
+    useEffect(() => {
+        const rawHtml = marked.parse(content || '') as string;
+        setParsedHtml(rawHtml);
+    }, [content]);
+    return <KatexRenderer content={parsedHtml} className={className} />;
+};
+
+const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelected: boolean, onSelect: (id: string, multi: boolean) => void, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void, onRegenerate: (id: string, keyword: string) => void }> = ({ card, scale, isSelected, onSelect, onDelete, onUpdate, onRegenerate }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(card.text || '');
@@ -67,6 +78,9 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
         if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement || e.target instanceof Path2D || (e.target as HTMLElement).closest('button')) return;
         if (isEditing && textareaRef.current?.contains(e.target as Node)) return;
+        
+        onSelect(card.id, e.shiftKey || e.ctrlKey || e.metaKey);
+
         setIsDragging(true);
         dragStartPos.current = { x: e.clientX, y: e.clientY, top: card.position.top, left: card.position.left };
         window.addEventListener('mousemove', handleMouseMove);
@@ -98,6 +112,9 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
     
     const colors = ['#fef9c3', '#f0fdf4', '#f0f9ff', '#fef2f2', '#faf5ff'];
     const isTextbox = card.type === 'text' && card.backgroundColor === 'transparent';
+    const isAiCard = card.type === 'text' && (card.backgroundColor === '#f0fdf4' || card.backgroundColor === '#dcfce7');
+
+    const selectionClass = isSelected ? 'ring-2 ring-[#2f7400] ring-offset-2 z-50' : '';
 
     if (card.type === 'image') {
         return (
@@ -105,7 +122,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
                 ref={cardRef} 
                 onMouseDown={handleMouseDown} 
                 style={{ ...cardStyle, width: card.width ? card.width : 300 }} // Provide a default width
-                className="visual-card absolute cursor-grab p-0 bg-transparent border-0 shadow-none group"
+                className={`visual-card absolute cursor-grab p-0 bg-transparent border-0 shadow-none group ${selectionClass}`}
             >
                 {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="w-full h-auto object-contain pointer-events-none select-none" draggable={false} />}
                 <button onClick={() => onDelete(card.id)} className="absolute top-0 right-0 m-1 p-1 bg-white/70 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-opacity z-10">
@@ -116,8 +133,8 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
     }
 
     const cardClasses = isTextbox
-        ? "visual-card absolute group"
-        : "visual-card bg-white p-3 rounded-lg border border-slate-200 shadow-lg w-56 flex flex-col group";
+        ? `visual-card absolute group ${selectionClass}`
+        : `visual-card bg-white p-3 rounded-lg border border-slate-200 shadow-lg w-56 flex flex-col group ${isAiCard ? 'font-sans' : ''} ${selectionClass}`;
 
     return (
         <div ref={cardRef} onMouseDown={handleMouseDown} style={cardStyle} className={cardClasses}>
@@ -161,7 +178,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
                         {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain pointer-events-none" />}
                         {card.type === 'text' && (isEditing ?
                             <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className={`w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 ${isTextbox ? 'text-lg' : 'text-sm'}`} /> :
-                            <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text`}><KatexRenderer content={marked.parse(card.text || '') as string} /></div>
+                            <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text ${isAiCard ? 'text-sm leading-relaxed' : ''}`}><MarkdownRenderer content={card.text || ''} /></div>
                         )}
                         {card.type === 'file' && (
                             <div className="flex flex-col items-center text-center p-2">
@@ -388,6 +405,34 @@ const ShareModal: React.FC<{ chat: Chat | undefined, whiteboardEl: HTMLDivElemen
     );
 };
 
+const FloatingAiMenu: React.FC<{ selectedCards: VisualCard[], onAction: (action: string) => void, position: {top: number, left: number} }> = ({ selectedCards, onAction, position }) => {
+    if (selectedCards.length === 0) return null;
+
+    return (
+        <div 
+            className="absolute z-50 bg-white rounded-lg shadow-xl border border-slate-200 p-1 flex flex-col gap-1 w-48 animate-fadeInRight origin-top-left"
+            style={{ top: position.top, left: position.left }}
+        >
+            <div className="text-xs font-semibold text-slate-400 px-2 py-1 uppercase tracking-wider">AI Tools</div>
+            <button onClick={() => onAction('example')} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm text-slate-700 text-left">
+                <LightbulbIcon /> Create example
+            </button>
+            <button onClick={() => onAction('quiz')} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm text-slate-700 text-left">
+                <BrainIcon /> Test my knowledge
+            </button>
+            <button onClick={() => onAction('explain')} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm text-slate-700 text-left">
+                <BookOpenIcon /> Explain
+            </button>
+            <button onClick={() => onAction('connect')} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm text-slate-700 text-left">
+                <ConnectIcon /> Draw connections
+            </button>
+            <button onClick={() => onAction('check')} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm text-slate-700 text-left">
+                <CritiqueIcon /> Double check this
+            </button>
+        </div>
+    );
+};
+
 const WhiteboardToolbar: React.FC<{
     activeTool: string, setActiveTool: (tool: any) => void, drawColor: string, setDrawColor: (c: string) => void,
     strokeWidth: number, setStrokeWidth: (w: number) => void, lineStyle: 'solid' | 'dashed' | 'dotted', setLineStyle: (s: 'solid' | 'dashed' | 'dotted') => void,
@@ -402,6 +447,7 @@ const WhiteboardToolbar: React.FC<{
     return (
         <div className="bg-white rounded-t-lg border border-b-0 border-slate-200 p-2 flex items-center gap-1 z-30 shadow-sm shrink-0">
             <ToolButton tool="select" icon={<SelectIcon />} title="Select & Pan" />
+            <ToolButton tool="ai-lasso" icon={<AiLassoIcon />} title="AI Lasso Tool" />
             <ToolButton tool="text" icon={<TextIcon />} title="Add Textbox" />
             <ToolButton tool="notepad" icon={<StickyNoteIcon />} title="Add Sticky Note" />
             <div className="w-px h-6 bg-slate-200 mx-2"></div>
@@ -433,8 +479,8 @@ const WhiteboardToolbar: React.FC<{
             <div className="flex-grow"></div>
             <button onClick={onBackgroundChange} className="p-2 hover:bg-slate-200 rounded-md" title="Change Background"><GridIcon/></button>
             <div className="w-px h-6 bg-slate-200 mx-2"></div>
-            <button onClick={onUndo} disabled={!canUndo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Undo"><UndoIcon /></button>
-            <button onClick={onRedo} disabled={!canRedo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Redo"><RedoIcon /></button>
+            <button onClick={onUndo} disabled={!canUndo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Undo (Ctrl+Z)"><UndoIcon /></button>
+            <button onClick={onRedo} disabled={!canRedo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Redo (Ctrl+Y)"><RedoIcon /></button>
             <button onClick={onWipe} className="p-2 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-md" title="Clear Whiteboard"><ClearIcon/></button>
         </div>
     );
@@ -487,7 +533,7 @@ const TranscriptSegmentItem: React.FC<{ segment: TranscriptSegment }> = ({ segme
             <span className="text-xs font-mono font-bold text-[#2f7400] bg-[#2f7400]/10 px-1.5 py-0.5 rounded">{segment.timestamp}</span>
             {segment.category && <span className="text-xs text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-full">{segment.category}</span>}
         </div>
-        <p className="text-sm text-slate-700 leading-relaxed">{segment.text}</p>
+        <p className="text-sm text-slate-700 leading-relaxed"><MarkdownRenderer content={segment.text} /></p>
     </div>
 );
 
@@ -523,13 +569,18 @@ export const App: React.FC = () => {
     
     // Whiteboard State
     type DrawingTool = 'pen' | 'highlighter';
-    const [activeTool, setActiveTool] = useState<'select' | 'text' | 'notepad' | DrawingTool | 'eraser' | 'rectangle' | 'ellipse' | 'line' | 'arrow'>('select');
+    const [activeTool, setActiveTool] = useState<'select' | 'ai-lasso' | 'text' | 'notepad' | DrawingTool | 'eraser' | 'rectangle' | 'ellipse' | 'line' | 'arrow'>('select');
     const [lastDrawingTool, setLastDrawingTool] = useState<DrawingTool>('pen');
     const [drawColor, setDrawColor] = useState('#EF4444'); // red-500
     const [strokeWidth, setStrokeWidth] = useState(3);
     const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
     const [isDrawing, setIsDrawing] = useState(false);
     
+    // Selection & Lasso
+    const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+    const [lassoPath, setLassoPath] = useState<{x: number, y: number}[]>([]);
+    const [aiMenuPosition, setAiMenuPosition] = useState<{top: number, left: number} | null>(null);
+
     // Drag & Drop State
     const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -610,7 +661,8 @@ export const App: React.FC = () => {
                 const newCard: VisualCard = {
                     id: `card-${Date.now()}-${Math.random()}`, type: 'text', keyword: title, text: item.point, sourceText: item.source, status: VisualCardStatus.Loaded,
                     position: findNextLogicalCardPosition(currentCards),
-                    rotation: Math.random() * 4 - 2, backgroundColor: '#f0fdf4'
+                    rotation: Math.random() * 4 - 2, 
+                    backgroundColor: '#f0fdf4' // green-50 for AI cards
                 };
                 newSummaryCards.push(newCard);
                 currentCards.push(newCard);
@@ -732,6 +784,64 @@ export const App: React.FC = () => {
             setIsGeneratingRoadmap(false);
         }
     };
+    
+    // --- Context Menu AI Actions ---
+    const handleAiMenuAction = async (action: string) => {
+        if (selectedCardIds.length === 0 || !activeChat) return;
+
+        // Gather text context from selected cards
+        const selectedText = activeChat.visualCards
+            .filter(card => selectedCardIds.includes(card.id))
+            .map(card => card.text || card.keyword)
+            .join('\n\n');
+
+        if (!selectedText.trim()) {
+            addToast("Selected items have no text content.", 'error');
+            return;
+        }
+
+        setStatus(<span><SparkleIcon /> AI is thinking...</span>);
+        
+        try {
+            if (action === 'quiz') {
+                const questions = await geminiService.generateQuiz(selectedText);
+                if (questions.length > 0) {
+                     const newQuiz: Quiz = { id: `quiz-${Date.now()}`, createdAt: new Date().toISOString(), questions };
+                     updateActiveChat(c => ({...c, quizzes: [...(c.quizzes || []), newQuiz]}));
+                     setActiveModalContent({ type: 'quiz', data: newQuiz });
+                }
+            } else {
+                // Actions: example, explain, connect, check
+                const resultText = await geminiService.performAiAction(action as any, selectedText);
+                
+                // Create a new card with the result near the first selected card
+                const firstCard = activeChat.visualCards.find(c => c.id === selectedCardIds[0]);
+                const newPos = firstCard ? { top: firstCard.position.top, left: firstCard.position.left + (firstCard.width || 300) + 20 } : { top: 100, left: 100 };
+                
+                const newCard: VisualCard = {
+                    id: `card-${Date.now()}`,
+                    type: 'text',
+                    keyword: `AI: ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+                    text: resultText,
+                    status: VisualCardStatus.Loaded,
+                    position: newPos,
+                    rotation: 0,
+                    backgroundColor: '#f0fdf4', // Green tint for AI response
+                    width: 300,
+                    newlyCreated: false
+                };
+                
+                updateActiveChat(c => ({ ...c, visualCards: [...c.visualCards, newCard] }));
+            }
+            setStatus("Ready.");
+        } catch (error) {
+            console.error("AI Action Failed", error);
+            setStatus("AI action failed.");
+            addToast("AI action failed.", 'error');
+        } finally {
+            // Close menu/selection could optionally happen here, but keeping selection allows user to do another action
+        }
+    };
 
     // --- Automatic AI Features ---
     useEffect(() => {
@@ -827,59 +937,92 @@ export const App: React.FC = () => {
         const target = e.target as HTMLElement; if (target.closest('.visual-card')) return;
         const container = whiteboardContainerRef.current; if (!container) return;
         
+        // Clear selection if clicking on empty space (unless adding to multi-selection via lasso logic elsewhere)
+        if (activeTool !== 'ai-lasso') {
+             setSelectedCardIds([]);
+             setAiMenuPosition(null);
+        }
+
         if (activeTool === 'select') { panZoomRef.current.isPanning = true; panZoomRef.current.startPanX = e.clientX - panZoomRef.current.panX; panZoomRef.current.startPanY = e.clientY - panZoomRef.current.panY; }
         else { 
             const coords = getCanvasRelativeCoords(e.nativeEvent, container);
             setIsDrawing(true); 
             drawStartCoords.current = coords; 
-            const ctx = canvasRef.current?.getContext('2d'); if (!ctx) return;
-            if (['pen', 'highlighter', 'eraser'].includes(activeTool)) { 
-                const { lineWidth, strokeStyle, globalCompositeOperation } = getBrushStyle(); 
-                ctx.lineWidth = lineWidth / panZoomRef.current.scale; 
-                ctx.strokeStyle = strokeStyle; 
-                ctx.globalCompositeOperation = globalCompositeOperation; 
-                ctx.setLineDash(getLineDash(lineStyle, lineWidth));
-                ctx.lineCap = 'round'; 
-                ctx.lineJoin = 'round'; 
-                ctx.beginPath(); 
-                ctx.moveTo(coords.x, coords.y); 
+            
+            if (activeTool === 'ai-lasso') {
+                setLassoPath([coords]);
+            } else {
+                const ctx = canvasRef.current?.getContext('2d'); if (!ctx) return;
+                if (['pen', 'highlighter', 'eraser'].includes(activeTool)) { 
+                    const { lineWidth, strokeStyle, globalCompositeOperation } = getBrushStyle(); 
+                    ctx.lineWidth = lineWidth / panZoomRef.current.scale; 
+                    ctx.strokeStyle = strokeStyle; 
+                    ctx.globalCompositeOperation = globalCompositeOperation; 
+                    ctx.setLineDash(getLineDash(lineStyle, lineWidth));
+                    ctx.lineCap = 'round'; 
+                    ctx.lineJoin = 'round'; 
+                    ctx.beginPath(); 
+                    ctx.moveTo(coords.x, coords.y); 
+                }
             }
         }
     };
     const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (panZoomRef.current.isPanning) { panZoomRef.current.panX = e.clientX - panZoomRef.current.startPanX; panZoomRef.current.panY = e.clientY - panZoomRef.current.startPanY; updateWhiteboardTransform(); }
         else if (isDrawing) {
-            const mainCtx = canvasRef.current?.getContext('2d'); const previewCtx = previewCanvasRef.current?.getContext('2d');
             const container = whiteboardContainerRef.current;
-            if (!mainCtx || !previewCtx || !previewCanvasRef.current || !container) return;
+            if (!container) return;
             const coords = getCanvasRelativeCoords(e.nativeEvent, container);
 
-            if (['pen', 'highlighter', 'eraser'].includes(activeTool)) { mainCtx.lineTo(coords.x, coords.y); mainCtx.stroke(); }
-            else if (['rectangle', 'ellipse', 'line', 'arrow', 'notepad'].includes(activeTool)) {
-                previewCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
-                const { lineWidth, strokeStyle } = getBrushStyle(); 
-                previewCtx.lineWidth = lineWidth / panZoomRef.current.scale; 
-                previewCtx.strokeStyle = strokeStyle;
-                previewCtx.setLineDash(getLineDash(lineStyle, lineWidth));
-                previewCtx.lineCap = 'round';
-                previewCtx.lineJoin = 'round';
-                previewCtx.beginPath();
-                if (['rectangle', 'notepad'].includes(activeTool)) previewCtx.rect(drawStartCoords.current.x, drawStartCoords.current.y, coords.x - drawStartCoords.current.x, coords.y - drawStartCoords.current.y);
-                else if (activeTool === 'ellipse') previewCtx.ellipse(drawStartCoords.current.x + (coords.x - drawStartCoords.current.x) / 2, drawStartCoords.current.y + (coords.y - drawStartCoords.current.y) / 2, Math.abs((coords.x - drawStartCoords.current.x) / 2), Math.abs((coords.y - drawStartCoords.current.y) / 2), 0, 0, 2 * Math.PI);
-                else if (activeTool === 'line') { previewCtx.moveTo(drawStartCoords.current.x, drawStartCoords.current.y); previewCtx.lineTo(coords.x, coords.y); }
-                else if (activeTool === 'arrow') {
-                    previewCtx.moveTo(drawStartCoords.current.x, drawStartCoords.current.y);
+             if (activeTool === 'ai-lasso') {
+                setLassoPath(prev => [...prev, coords]);
+                const previewCtx = previewCanvasRef.current?.getContext('2d');
+                if (previewCtx && previewCanvasRef.current) {
+                    previewCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
+                    previewCtx.lineWidth = 2 / panZoomRef.current.scale;
+                    previewCtx.strokeStyle = '#2f7400';
+                    previewCtx.setLineDash([5, 5]);
+                    previewCtx.beginPath();
+                    if (lassoPath.length > 0) {
+                        previewCtx.moveTo(lassoPath[0].x, lassoPath[0].y);
+                        for (let i = 1; i < lassoPath.length; i++) {
+                            previewCtx.lineTo(lassoPath[i].x, lassoPath[i].y);
+                        }
+                    }
                     previewCtx.lineTo(coords.x, coords.y);
-                    const headlen = 10 / panZoomRef.current.scale;
-                    const dx = coords.x - drawStartCoords.current.x;
-                    const dy = coords.y - drawStartCoords.current.y;
-                    const angle = Math.atan2(dy, dx);
-                    previewCtx.moveTo(coords.x, coords.y);
-                    previewCtx.lineTo(coords.x - headlen * Math.cos(angle - Math.PI / 6), coords.y - headlen * Math.sin(angle - Math.PI / 6));
-                    previewCtx.moveTo(coords.x, coords.y);
-                    previewCtx.lineTo(coords.x - headlen * Math.cos(angle + Math.PI / 6), coords.y - headlen * Math.sin(angle + Math.PI / 6));
+                    previewCtx.stroke();
                 }
-                previewCtx.stroke();
+            } else {
+                const mainCtx = canvasRef.current?.getContext('2d'); const previewCtx = previewCanvasRef.current?.getContext('2d');
+                if (!mainCtx || !previewCtx || !previewCanvasRef.current) return;
+
+                if (['pen', 'highlighter', 'eraser'].includes(activeTool)) { mainCtx.lineTo(coords.x, coords.y); mainCtx.stroke(); }
+                else if (['rectangle', 'ellipse', 'line', 'arrow', 'notepad'].includes(activeTool)) {
+                    previewCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
+                    const { lineWidth, strokeStyle } = getBrushStyle(); 
+                    previewCtx.lineWidth = lineWidth / panZoomRef.current.scale; 
+                    previewCtx.strokeStyle = strokeStyle;
+                    previewCtx.setLineDash(getLineDash(lineStyle, lineWidth));
+                    previewCtx.lineCap = 'round';
+                    previewCtx.lineJoin = 'round';
+                    previewCtx.beginPath();
+                    if (['rectangle', 'notepad'].includes(activeTool)) previewCtx.rect(drawStartCoords.current.x, drawStartCoords.current.y, coords.x - drawStartCoords.current.x, coords.y - drawStartCoords.current.y);
+                    else if (activeTool === 'ellipse') previewCtx.ellipse(drawStartCoords.current.x + (coords.x - drawStartCoords.current.x) / 2, drawStartCoords.current.y + (coords.y - drawStartCoords.current.y) / 2, Math.abs((coords.x - drawStartCoords.current.x) / 2), Math.abs((coords.y - drawStartCoords.current.y) / 2), 0, 0, 2 * Math.PI);
+                    else if (activeTool === 'line') { previewCtx.moveTo(drawStartCoords.current.x, drawStartCoords.current.y); previewCtx.lineTo(coords.x, coords.y); }
+                    else if (activeTool === 'arrow') {
+                        previewCtx.moveTo(drawStartCoords.current.x, drawStartCoords.current.y);
+                        previewCtx.lineTo(coords.x, coords.y);
+                        const headlen = 10 / panZoomRef.current.scale;
+                        const dx = coords.x - drawStartCoords.current.x;
+                        const dy = coords.y - drawStartCoords.current.y;
+                        const angle = Math.atan2(dy, dx);
+                        previewCtx.moveTo(coords.x, coords.y);
+                        previewCtx.lineTo(coords.x - headlen * Math.cos(angle - Math.PI / 6), coords.y - headlen * Math.sin(angle - Math.PI / 6));
+                        previewCtx.moveTo(coords.x, coords.y);
+                        previewCtx.lineTo(coords.x - headlen * Math.cos(angle + Math.PI / 6), coords.y - headlen * Math.sin(angle + Math.PI / 6));
+                    }
+                    previewCtx.stroke();
+                }
             }
         }
     };
@@ -898,7 +1041,52 @@ export const App: React.FC = () => {
             const height = Math.abs(endCoords.y - startCoords.y);
             const distance = Math.sqrt(width * width + height * height);
 
-            if (activeTool === 'text' && distance < 5) { // Single click
+            if (activeTool === 'ai-lasso') {
+                 // Close the lasso visual
+                previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                
+                // Calculate bounding box of the lasso
+                if (lassoPath.length > 2) {
+                    const minX = Math.min(...lassoPath.map(p => p.x));
+                    const maxX = Math.max(...lassoPath.map(p => p.x));
+                    const minY = Math.min(...lassoPath.map(p => p.y));
+                    const maxY = Math.max(...lassoPath.map(p => p.y));
+
+                    // Find cards inside bounding box
+                    // Simple collision: if card center is inside box
+                    const newSelectedIds: string[] = [];
+                    activeChat?.visualCards.forEach(card => {
+                        const cardWidth = card.width || 220;
+                        const cardHeight = card.height || 150;
+                        const cardCenterX = card.position.left + cardWidth / 2;
+                        const cardCenterY = card.position.top + cardHeight / 2;
+
+                        if (cardCenterX >= minX && cardCenterX <= maxX &&
+                            cardCenterY >= minY && cardCenterY <= maxY) {
+                            newSelectedIds.push(card.id);
+                        }
+                    });
+
+                    setSelectedCardIds(newSelectedIds);
+                    if (newSelectedIds.length > 0) {
+                        // Position menu near the top-right of the selection box, adjusted for screen
+                        const { scale, panX, panY } = panZoomRef.current;
+                        // Transform canvas coords back to screen coords for the menu position (roughly)
+                        // Actually, menu is absolute positioned inside container, so we use container relative (but menu needs top/left)
+                        // We will position it relative to the whiteboard container
+                        // The menu is absolute positioned in main div? No, let's put it in the whiteboard container logic or handle coords.
+                        // Ideally, we want UI coordinates.
+                        // Let's use the bounds maxX, minY converted to DOM pixels
+                        const menuLeft = (maxX * scale) + panX + 20; 
+                        const menuTop = (minY * scale) + panY;
+                        
+                        setAiMenuPosition({ top: Math.max(20, menuTop), left: Math.min(container.clientWidth - 200, menuLeft) });
+                    }
+                }
+                setLassoPath([]);
+                setActiveTool('select'); // Switch back to select
+
+            } else if (activeTool === 'text' && distance < 5) { // Single click
                 previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
                 const newCard: VisualCard = {
                     id: `card-${Date.now()}`, type: 'text', keyword: 'Text', text: 'Start typing...',
@@ -928,6 +1116,38 @@ export const App: React.FC = () => {
 
         }
     };
+
+    // Handle Selection Logic for Single Cards
+    const handleCardSelect = (id: string, multi: boolean) => {
+        // If lasso just finished, we might have selection. If user clicks a card:
+        let newSelection = [...selectedCardIds];
+        if (multi) {
+            if (newSelection.includes(id)) newSelection = newSelection.filter(sid => sid !== id);
+            else newSelection.push(id);
+        } else {
+            if (!newSelection.includes(id)) newSelection = [id];
+            // If already selected and no modifier, keep selection (might be start of drag)
+        }
+        
+        setSelectedCardIds(newSelection);
+        
+        // Calculate menu position for single click
+        // We need the card's position.
+        const card = activeChat?.visualCards.find(c => c.id === id);
+        if (card && newSelection.length > 0) {
+             const { scale, panX, panY } = panZoomRef.current;
+             const cardWidth = card.width || 220;
+             const menuLeft = ((card.position.left + cardWidth) * scale) + panX + 20;
+             const menuTop = (card.position.top * scale) + panY;
+             // Ensure inside container
+             const container = whiteboardContainerRef.current;
+             if(container) {
+                 setAiMenuPosition({ top: Math.max(20, menuTop), left: Math.min(container.clientWidth - 200, menuLeft) });
+             }
+        } else {
+             setAiMenuPosition(null);
+        }
+    };
     
     useEffect(() => {
         const container = whiteboardContainerRef.current;
@@ -935,6 +1155,12 @@ export const App: React.FC = () => {
         const handleWheel = (e: WheelEvent) => {
             e.preventDefault();
             const pz = panZoomRef.current;
+            
+            // Standardizing zoom vs pan logic
+            // Most trackpads emit scroll events. 
+            // If ctrl key is pressed -> Zoom
+            // If no ctrl key -> Pan (Scroll)
+            
             if (e.ctrlKey || e.metaKey) { // Zoom
                 const zoomIntensity = 0.1;
                 const direction = e.deltaY < 0 ? 1 : -1;
@@ -947,12 +1173,37 @@ export const App: React.FC = () => {
                 pz.scale *= scaleFactor;
                 pz.panX = newPanX;
                 pz.panY = newPanY;
-            } else { pz.panX -= e.deltaX; pz.panY -= e.deltaY; } // Pan
+            } else { 
+                // Pan / Scroll
+                pz.panX -= e.deltaX; 
+                pz.panY -= e.deltaY; 
+            } 
             updateWhiteboardTransform();
+            // Hide AI menu on pan/zoom to avoid floating weirdly
+            if (selectedCardIds.length > 0) setAiMenuPosition(null); 
         };
         container.addEventListener('wheel', handleWheel, { passive: false });
         return () => container.removeEventListener('wheel', handleWheel);
-    }, [updateWhiteboardTransform]);
+    }, [updateWhiteboardTransform, selectedCardIds.length]);
+    
+    // Global Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Undo: Ctrl+Z
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                handleUndo();
+            }
+            // Redo: Ctrl+Y or Ctrl+Shift+Z
+            if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeChat]); // Dependent on activeChat to access latest state via handleUndo/Redo if they were closed over state, but they use refs/updateActiveChat
 
     const handleZoom = (direction: 'in' | 'out') => {
         const pz = panZoomRef.current;
@@ -971,6 +1222,8 @@ export const App: React.FC = () => {
         pz.scale *= scaleFactor;
 
         updateWhiteboardTransform();
+         // Hide AI menu on zoom
+        if (selectedCardIds.length > 0) setAiMenuPosition(null);
     };
     const handleToggleFullScreen = () => {
         const elem = document.documentElement; // Full screen the whole app
@@ -1095,7 +1348,7 @@ export const App: React.FC = () => {
                                     status: VisualCardStatus.Loaded,
                                     position: findNextLogicalCardPosition(currentCards),
                                     rotation: Math.random() * 4 - 2,
-                                    backgroundColor: '#fef9c3', // Sticky note yellow
+                                    backgroundColor: '#f0fdf4', // Green tint for AI notes
                                 };
                                 newNotepadCards.push(newCard);
                                 currentCards.push(newCard); // Update for next position calculation
@@ -1484,30 +1737,32 @@ export const App: React.FC = () => {
                             <input type="text" value={activeChat.title} onChange={e => updateActiveChat(c => ({...c, title: e.target.value}))} className="text-xl font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-[#2f7400] rounded-md -ml-2 px-2 py-1 w-full min-w-0" />
                         </div>
 
-                         {/* Integrated Recording Controls */}
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${isRecording ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
-                            {isRecording && !isPaused ? (
-                                <>
-                                    <div className="flex items-center gap-2 mr-2">
-                                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
-                                        <span className="font-mono text-sm font-medium text-red-700">{formatTime(sessionSeconds)}</span>
-                                    </div>
-                                    <button onClick={pauseRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-slate-600 hover:text-slate-800 hover:bg-slate-100" title="Pause Recording"><PauseIcon/></button>
-                                    <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
-                                </>
-                            ) : isPaused ? (
-                                <>
-                                    <span className="font-mono text-sm font-medium text-slate-500 mr-2">Paused ({formatTime(sessionSeconds)})</span>
-                                    <button onClick={resumeRecording} className="p-1.5 bg-[#2f7400] text-white rounded-full hover:bg-[#255b00]" title="Resume Recording"><PlayIcon/></button>
-                                    <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
-                                </>
-                            ) : (
-                                <button onClick={startRecording} className="flex items-center gap-2 px-2 py-0.5 text-sm font-semibold text-slate-600 hover:text-[#2f7400]">
-                                    <MicIcon />
-                                    <span>Start Live Audio</span>
-                                </button>
-                            )}
-                        </div>
+                         {/* Integrated Recording Controls - Styled to match buttons when idle */}
+                        {isRecording || isPaused ? (
+                             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${isRecording && !isPaused ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                                {isRecording && !isPaused ? (
+                                    <>
+                                        <div className="flex items-center gap-2 mr-2">
+                                            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                                            <span className="font-mono text-sm font-medium text-red-700">{formatTime(sessionSeconds)}</span>
+                                        </div>
+                                        <button onClick={pauseRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-slate-600 hover:text-slate-800 hover:bg-slate-100" title="Pause Recording"><PauseIcon/></button>
+                                        <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="font-mono text-sm font-medium text-slate-500 mr-2">Paused ({formatTime(sessionSeconds)})</span>
+                                        <button onClick={resumeRecording} className="p-1.5 bg-[#2f7400] text-white rounded-full hover:bg-[#255b00]" title="Resume Recording"><PlayIcon/></button>
+                                        <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                             <button onClick={startRecording} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-md text-sm font-semibold text-slate-700">
+                                <MicIcon />
+                                <span>Start Live Audio</span>
+                            </button>
+                        )}
 
                         {/* Upload Button */}
                         <button 
@@ -1556,8 +1811,11 @@ export const App: React.FC = () => {
                                     <button onClick={() => handleZoom('out')} className="p-2 rounded-md hover:bg-slate-100" title="Zoom Out"><ZoomOutIcon/></button>
                                     <button onClick={handleToggleFullScreen} className="p-2 rounded-md hover:bg-slate-100" title="Full Screen"><FullScreenIcon/></button>
                                 </div>
-                                 <div ref={whiteboardRef} className="w-full h-full transform-origin-top-left relative pointer-events-auto">
-                                    {activeChat.visualCards.map(card => <VisualCardComponent key={card.id} card={card} scale={panZoomRef.current.scale} onDelete={(id) => updateActiveChat(c => ({...c, visualCards: c.visualCards.filter(v => v.id !== id)}))} onUpdate={updatedCard => updateActiveChat(c => ({...c, visualCards: c.visualCards.map(v => v.id === updatedCard.id ? updatedCard : v)}))} onRegenerate={handleRegenerateVisual} />)}
+                                <div ref={whiteboardRef} className="w-full h-full transform-origin-top-left relative pointer-events-auto">
+                                    {activeChat.visualCards.map(card => <VisualCardComponent key={card.id} card={card} scale={panZoomRef.current.scale} isSelected={selectedCardIds.includes(card.id)} onSelect={handleCardSelect} onDelete={(id) => updateActiveChat(c => ({...c, visualCards: c.visualCards.filter(v => v.id !== id)}))} onUpdate={updatedCard => updateActiveChat(c => ({...c, visualCards: c.visualCards.map(v => v.id === updatedCard.id ? updatedCard : v)}))} onRegenerate={handleRegenerateVisual} />)}
+                                    {aiMenuPosition && (
+                                        <FloatingAiMenu selectedCards={activeChat.visualCards.filter(c => selectedCardIds.includes(c.id))} onAction={handleAiMenuAction} position={aiMenuPosition} />
+                                    )}
                                     <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"></canvas>
                                     <canvas ref={previewCanvasRef} className="absolute top-0 left-0 w-full h-full z-20 pointer-events-none"></canvas>
                                 </div>
@@ -1583,7 +1841,7 @@ export const App: React.FC = () => {
                                         {activeContextTab === 'notes' && (
                                             <div className="prose prose-sm prose-slate max-w-none">
                                                 {activeChat.contextText ? (
-                                                    <div className="whitespace-pre-wrap">{activeChat.contextText}</div>
+                                                    <MarkdownRenderer content={activeChat.contextText} />
                                                 ) : (
                                                     <div className="text-slate-400 italic text-center mt-10">
                                                         No text context available. <br/>Upload a file or start speaking to populate notes.

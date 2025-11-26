@@ -21,7 +21,13 @@ const parseJsonResponse = <T>(responseText: string): T => {
 
 export const summarizeText = async (text: string): Promise<{ point: string; source: string; }[]> => {
     if (!text.trim()) return [];
-    const prompt = `Analyze the following text and create a structured summary of its key points. For each point, provide the verbatim source quote from the text that supports it. It is critical to extract and include any mathematical formulas or LaTeX code exactly as they appear in the text within the relevant summary points.
+    // Prompt updated to strictly limit to top 5 key concepts and short length
+    const prompt = `Analyze the following text and create a structured summary of the top 3 to 5 most critical key concepts (maximum). Do not summarize everything, only the most important parts.
+    
+    For each point:
+    1. Provide a concise description (maximum 7 lines).
+    2. Provide the verbatim source quote from the text that supports it. 
+    3. It is critical to extract and include any mathematical formulas or LaTeX code exactly as they appear in the text within the relevant summary points.
 
 TEXT:
 """${text}"""`;
@@ -36,11 +42,11 @@ TEXT:
                   properties: {
                       summary: {
                           type: Type.ARRAY,
-                          description: "An array of summary points with their sources.",
+                          description: "An array of 3-5 key concept summary points.",
                           items: {
                               type: Type.OBJECT,
                               properties: {
-                                  point: { type: Type.STRING, description: "The Markdown-formatted summary point, including any exact formulas." },
+                                  point: { type: Type.STRING, description: "The Markdown-formatted summary point (max 7 lines), including any exact formulas." },
                                   source: { type: Type.STRING, description: "The exact source text from the input." }
                               },
                               required: ["point", "source"]
@@ -95,7 +101,7 @@ export const extractKeywords = async (text: string): Promise<string[]> => {
   if (!text.trim()) {
     return [];
   }
-  const prompt = `Analyze the following lecture transcript and notes. Identify the top 8 most important, visually representable keywords or short concepts (2-3 words max).\n\nTEXT:\n"""${text}"""`;
+  const prompt = `Analyze the following lecture transcript and notes. Identify the top 5 most important, visually representable keywords or short concepts (2-3 words max).\n\nTEXT:\n"""${text}"""`;
   
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -108,7 +114,7 @@ export const extractKeywords = async (text: string): Promise<string[]> => {
                 properties: {
                     keywords: {
                         type: Type.ARRAY,
-                        description: "A list of the top 8 most important keywords or short concepts.",
+                        description: "A list of the top 5 most important keywords or short concepts.",
                         items: {
                             type: Type.STRING,
                         },
@@ -308,7 +314,10 @@ ${folderListString}
 
 export const generateNotepadsFromText = async (text: string, count: number): Promise<{ title: string; content: string; }[]> => {
     if (!text.trim() || count <= 0) return [];
-    const prompt = `Analyze the provided text and break it down into ${count} distinct, self-contained summary notes. Each note should cover a major topic or concept from the text. For each note, provide a concise title and a paragraph of summary content.
+    // Limit to max 5 distinct concepts, short content
+    const prompt = `Analyze the provided text and identify the top ${Math.min(count, 5)} most critical key concepts. 
+    Create a summary card for each.
+    Each card must have a concise title and a short paragraph of summary content (maximum 7 lines).
 
 TEXT:
 """${text}"""`;
@@ -324,12 +333,12 @@ TEXT:
                     properties: {
                         notes: {
                             type: Type.ARRAY,
-                            description: `An array of ${count} summary notes.`,
+                            description: `An array of up to 5 key concept summary notes.`,
                             items: {
                                 type: Type.OBJECT,
                                 properties: {
                                     title: { type: Type.STRING, description: "A concise title for the note." },
-                                    content: { type: Type.STRING, description: "The summary content of the note." }
+                                    content: { type: Type.STRING, description: "The summary content (max 7 lines)." }
                                 },
                                 required: ["title", "content"]
                             }
@@ -361,5 +370,34 @@ TEXT:
         return response.text.trim().replace(/["']/g, ''); 
     } catch (error) {
         return 'General';
+    }
+};
+
+export const performAiAction = async (action: 'example' | 'explain' | 'connect' | 'check', text: string): Promise<string> => {
+    let prompt = "";
+    switch (action) {
+        case 'example':
+            prompt = `Create a concrete, easy-to-understand example for the following concept. Use a real-world analogy if possible.\n\nCONCEPT:\n"""${text}"""`;
+            break;
+        case 'explain':
+            prompt = `Explain the following concept in simple terms, as if teaching a beginner. Highlight the 'why' and 'how'.\n\nCONCEPT:\n"""${text}"""`;
+            break;
+        case 'connect':
+            prompt = `Identify connections between the following text and broader themes or related concepts. How does this fit into the bigger picture?\n\nTEXT:\n"""${text}"""`;
+            break;
+        case 'check':
+            prompt = `Critique the following text. Is it accurate? Are there any logical fallacies or missing important nuances? Provide a brief double-check analysis.\n\nTEXT:\n"""${text}"""`;
+            break;
+    }
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+        });
+        return response.text;
+    } catch (error) {
+        console.error(`Error performing AI action ${action}:`, error);
+        throw new Error(`Failed to perform ${action}.`);
     }
 };
