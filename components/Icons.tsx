@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const UploadIcon = () => (
@@ -143,15 +144,16 @@ export const SourceIcon = () => (
     </svg>
 );
 export const PaletteIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402a3.75 3.75 0 0 0-5.304-5.304L4.098 14.6c-1.464 1.464-1.464 3.84 0 5.304Zm1.306-1.306a2.25 2.25 0 0 1 0-3.182l6.401-6.402a2.25 2.25 0 0 1 3.182 3.182l-6.401 6.402a2.25 2.25 0 0 1-3.182 0ZM15 5.25a3 3 0 0 1 3 3m3 0a3 3 0 0 1-3 3m-3.75 3.75a3 3 0 0 1-3-3m-3 0a3 3 0 0 1 3-3m-3.75-3.75a3 3 0 0 1 3 3m3 0a3 3 0 0 1-3 3" />
     </svg>
 );
 export const CanopyLogo = ({ className }: { className?: string }) => (
-    <div className={`flex items-center gap-2 text-2xl font-bold text-[#2f7400] ${className}`}>
-        <span style={{ fontSize: '1.8rem', lineHeight: 1 }}>🌱</span>
-        <span>Canopy</span>
-    </div>
+    <img 
+        src="logo.png" 
+        alt="Canopy Logo" 
+        className={className} 
+    />
 );
 export const ZoomInIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5">
@@ -201,3 +203,4 @@ export const InfoCircleIcon = () => (
       <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
     </svg>
 );
+    

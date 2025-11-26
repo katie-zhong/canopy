@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality, GenerateContentResponse } from "@google/genai";
 import type { QuizQuestion, LearningStep } from "../types";
 
@@ -343,5 +344,22 @@ TEXT:
     } catch (error) {
         console.error("Error generating notepads:", error);
         throw new Error("Failed to generate notepads.");
+    }
+};
+
+export const categorizeTranscriptSegment = async (text: string): Promise<string> => {
+    if (text.trim().length < 20) return 'General';
+    const prompt = `Categorize the following short transcript segment into a single 1-3 word topic label (e.g., "Introduction", "Thermodynamics", "Q&A", "Logistics").
+
+TEXT:
+"""${text}"""`;
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+        });
+        return response.text.trim().replace(/["']/g, ''); 
+    } catch (error) {
+        return 'General';
     }
 };

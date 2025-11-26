@@ -1,3 +1,4 @@
+
 export enum VisualCardStatus {
   Loading = 'loading',
   Loaded = 'loaded',
@@ -27,6 +28,14 @@ export interface VisualCard {
   fileUrl?: string; // For image/file objects
   sourceText?: string; // For linking summaries back to source
   newlyCreated?: boolean; // Flag to trigger auto-editing
+}
+
+export interface TranscriptSegment {
+    id: string;
+    timestamp: string; // e.g. "00:45"
+    text: string;
+    category?: string;
+    isFinal: boolean;
 }
 
 export interface Folder {
@@ -59,7 +68,8 @@ export interface Chat {
     id:string;
     title: string;
     date: string;
-    contextText: string;
+    contextText: string; // Aggregate text for AI processing
+    transcriptSegments?: TranscriptSegment[]; // Structured live audio data
     visualCards: VisualCard[];
     studyGoal?: string;
     reminderTime?: string;

@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { marked } from 'marked';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { VisualCard, VisualCardStatus, Chat, QuizQuestion, LearningStep, QuestionType, Quiz, Roadmap, Folder, UploadedFile, GeneratedVisual, Toast } from './types';
+import { VisualCard, VisualCardStatus, Chat, QuizQuestion, LearningStep, QuestionType, Quiz, Roadmap, Folder, UploadedFile, GeneratedVisual, Toast, TranscriptSegment } from './types';
 import * as geminiService from './services/geminiService';
 import {
     UploadIcon, ShareIcon, MicIcon, PauseIcon, PlayIcon, StopIcon, SparkleIcon, DeleteIcon,
@@ -106,7 +107,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
                 style={{ ...cardStyle, width: card.width ? card.width : 300 }} // Provide a default width
                 className="visual-card absolute cursor-grab p-0 bg-transparent border-0 shadow-none group"
             >
-                {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="w-full h-auto object-contain pointer-events-none" />}
+                {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="w-full h-auto object-contain pointer-events-none select-none" draggable={false} />}
                 <button onClick={() => onDelete(card.id)} className="absolute top-0 right-0 m-1 p-1 bg-white/70 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-opacity z-10">
                     <DeleteIcon />
                 </button>
@@ -157,7 +158,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, onDelete:
                 {card.status === VisualCardStatus.Error && <span className="text-red-500 text-sm">Error</span>}
                 {card.status === VisualCardStatus.Loaded && (
                     <>
-                        {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain" />}
+                        {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain pointer-events-none" />}
                         {card.type === 'text' && (isEditing ?
                             <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className={`w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 ${isTextbox ? 'text-lg' : 'text-sm'}`} /> :
                             <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text`}><KatexRenderer content={marked.parse(card.text || '') as string} /></div>
@@ -232,24 +233,6 @@ const Modal: React.FC<{ children: React.ReactNode, onClose: () => void, title: s
             <main className="p-6 overflow-y-auto">{children}</main>
         </div>
     </div>
-);
-
-const NewSessionModal: React.FC<{ onClose: () => void, onRecord: () => void, onUpload: () => void }> = ({ onClose, onRecord, onUpload }) => (
-    <Modal onClose={onClose} title="Start Your New Session" icon={<CanopyLogo className="!text-xl" />} widthClass="max-w-lg">
-        <div className="text-center">
-            <p className="text-slate-600 mb-6">How would you like to begin? You can add more content later.</p>
-            <div className="flex flex-col sm:flex-row gap-4">
-                <button onClick={onRecord} className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-[#2f7400] text-white rounded-lg font-semibold hover:bg-[#255b00] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2f7400]">
-                    <MicIcon />
-                    <span>Record Audio</span>
-                </button>
-                <button onClick={onUpload} className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-[#2f7400] text-white rounded-lg font-semibold hover:bg-[#255b00] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2f7400]">
-                    <UploadIcon />
-                    <span>Upload Files</span>
-                </button>
-            </div>
-        </div>
-    </Modal>
 );
 
 const QuizModal: React.FC<{ quiz: Quiz, onClose: () => void }> = ({ quiz, onClose }) => {
@@ -408,9 +391,9 @@ const ShareModal: React.FC<{ chat: Chat | undefined, whiteboardEl: HTMLDivElemen
 const WhiteboardToolbar: React.FC<{
     activeTool: string, setActiveTool: (tool: any) => void, drawColor: string, setDrawColor: (c: string) => void,
     strokeWidth: number, setStrokeWidth: (w: number) => void, lineStyle: 'solid' | 'dashed' | 'dotted', setLineStyle: (s: 'solid' | 'dashed' | 'dotted') => void,
-    onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean, onAddFile: () => void, onBackgroundChange: () => void,
+    onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean, onBackgroundChange: () => void,
     onColorClick: (color: string) => void, onWipe: () => void
-}> = ({ activeTool, setActiveTool, drawColor, setDrawColor, strokeWidth, setStrokeWidth, lineStyle, setLineStyle, onUndo, onRedo, canUndo, canRedo, onAddFile, onBackgroundChange, onColorClick, onWipe }) => {
+}> = ({ activeTool, setActiveTool, drawColor, setDrawColor, strokeWidth, setStrokeWidth, lineStyle, setLineStyle, onUndo, onRedo, canUndo, canRedo, onBackgroundChange, onColorClick, onWipe }) => {
     const ToolButton = ({ tool, icon, title }: { tool: string, icon: React.ReactNode, title: string }) => (
         <button onClick={() => setActiveTool(tool)} className={`p-2 rounded-md ${activeTool === tool ? 'bg-[#2f7400]/20 text-[#2f7400]' : 'hover:bg-slate-200'}`} title={title}>{icon}</button>
     );
@@ -448,7 +431,6 @@ const WhiteboardToolbar: React.FC<{
                 </div>
             </div>
             <div className="flex-grow"></div>
-            <button onClick={onAddFile} className="p-2 hover:bg-slate-200 rounded-md" title="Add Image/File to Board"><FileIcon/></button>
             <button onClick={onBackgroundChange} className="p-2 hover:bg-slate-200 rounded-md" title="Change Background"><GridIcon/></button>
             <div className="w-px h-6 bg-slate-200 mx-2"></div>
             <button onClick={onUndo} disabled={!canUndo} className="p-2 hover:bg-slate-200 rounded-md disabled:opacity-40" title="Undo"><UndoIcon /></button>
@@ -499,27 +481,36 @@ const ToastNotification: React.FC<{ toast: Toast, onDismiss: (id: number) => voi
     );
 };
 
-// Fix: Changed to a named export.
+const TranscriptSegmentItem: React.FC<{ segment: TranscriptSegment }> = ({ segment }) => (
+    <div className="p-3 mb-2 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">
+        <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-mono font-bold text-[#2f7400] bg-[#2f7400]/10 px-1.5 py-0.5 rounded">{segment.timestamp}</span>
+            {segment.category && <span className="text-xs text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-full">{segment.category}</span>}
+        </div>
+        <p className="text-sm text-slate-700 leading-relaxed">{segment.text}</p>
+    </div>
+);
+
+
 export const App: React.FC = () => {
     // App State
     const [folders, setFolders] = useState<Folder[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [status, setStatus] = useState<React.ReactNode>('Select a session or create a new one.');
+    const [status, setStatus] = useState<React.ReactNode>('Ready');
     const [isRecording, setIsRecording] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
-    const [seconds, setSeconds] = useState(0);
+    const [sessionSeconds, setSessionSeconds] = useState(0); // Total session time tracking
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [studyStreak, setStudyStreak] = useState(0);
-    const [activeContextTab, setActiveContextTab] = useState<'notes' | 'files' | 'transcription'>('notes');
+    const [activeContextTab, setActiveContextTab] = useState<'notes' | 'files' | 'transcription'>('transcription');
     const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isContextPanelVisible, setIsContextPanelVisible] = useState(true);
     const [contextPanelWidth, setContextPanelWidth] = useState(384);
     const [liveTranscript, setLiveTranscript] = useState('');
-    const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     // Toolbox State
@@ -557,6 +548,7 @@ export const App: React.FC = () => {
     const recognitionOnEndCallbackRef = useRef<(() => void) | undefined>(undefined);
     const autoGenerateTimeoutRef = useRef<number | null>(null);
     const isResizingRef = useRef(false);
+    const currentSegmentRef = useRef<TranscriptSegment | null>(null);
 
     const activeChat = chats.find(c => c.id === activeChatId);
     const activeFile = activeChat?.uploadedFiles?.find(f => f.id === activeFileId);
@@ -565,16 +557,24 @@ export const App: React.FC = () => {
     useEffect(() => { if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${window.pdfjsLib.version}/pdf.worker.min.js`; } }, []);
     useEffect(() => {
         try {
-            const savedState = localStorage.getItem('canopy-app-state-v3');
+            const savedState = localStorage.getItem('canopy-app-state-v4');
             if (savedState) {
                 const state = JSON.parse(savedState);
                 setFolders(state.folders || []);
-                setChats((state.chats || []).map((chat: Chat) => ({ ...chat, quizzes: chat.quizzes || [], roadmaps: chat.roadmaps || [], uploadedFiles: chat.uploadedFiles || [], generatedVisuals: chat.generatedVisuals || [], whiteboardBackground: chat.whiteboardBackground || 'plain' })));
+                setChats((state.chats || []).map((chat: Chat) => ({ 
+                    ...chat, 
+                    quizzes: chat.quizzes || [], 
+                    roadmaps: chat.roadmaps || [], 
+                    uploadedFiles: chat.uploadedFiles || [], 
+                    generatedVisuals: chat.generatedVisuals || [], 
+                    whiteboardBackground: chat.whiteboardBackground || 'plain',
+                    transcriptSegments: chat.transcriptSegments || [] 
+                })));
                 setActiveChatId(state.activeChatId || null);
             } else { handleNewChat(); }
         } catch (error) { console.error("Failed to load state from localStorage", error); }
     }, []); // eslint-disable-line
-    const saveState = useCallback(() => { try { localStorage.setItem('canopy-app-state-v3', JSON.stringify({ chats, folders, activeChatId })); } catch (error) { console.error("Failed to save state to localStorage", error); } }, [chats, folders, activeChatId]);
+    const saveState = useCallback(() => { try { localStorage.setItem('canopy-app-state-v4', JSON.stringify({ chats, folders, activeChatId })); } catch (error) { console.error("Failed to save state to localStorage", error); } }, [chats, folders, activeChatId]);
     useEffect(() => { saveState(); }, [saveState]);
     const updateActiveChat = (updater: (chat: Chat) => Chat) => { setChats(prev => prev.map(c => c.id === activeChatId ? updater(c) : c)); };
     
@@ -767,7 +767,7 @@ export const App: React.FC = () => {
     }, [activeChat?.contextText, activeChat?.id]); // eslint-disable-line
 
     // --- Chat & Folder Management ---
-    const handleNewChat = () => { const newChat: Chat = { id: `chat-${Date.now()}`, title: `New Session - ${new Date().toLocaleDateString()}`, date: new Date().toISOString(), contextText: '', visualCards: [], summaryPoints: [], quizzes: [], roadmaps: [], generatedVisuals: [], uploadedFiles: [], drawingHistory: [], drawingHistoryIndex: -1, whiteboardBackground: 'plain', folderId: null }; setChats(prev => [newChat, ...prev]); setActiveChatId(newChat.id); setIsNewSessionModalOpen(true); };
+    const handleNewChat = () => { const newChat: Chat = { id: `chat-${Date.now()}`, title: `New Session - ${new Date().toLocaleDateString()}`, date: new Date().toISOString(), contextText: '', visualCards: [], summaryPoints: [], quizzes: [], roadmaps: [], generatedVisuals: [], uploadedFiles: [], drawingHistory: [], drawingHistoryIndex: -1, whiteboardBackground: 'plain', folderId: null, transcriptSegments: [] }; setChats(prev => [newChat, ...prev]); setActiveChatId(newChat.id); };
     const handleNewFolder = () => { const newFolder: Folder = { id: `folder-${Date.now()}`, name: 'New Course Folder', date: new Date().toISOString() }; setFolders(prev => [newFolder, ...prev]); };
     const handleRenameFolder = (folderId: string, newName: string) => { setFolders(folders => folders.map(f => f.id === folderId ? { ...f, name: newName } : f)); };
     const handleDeleteFolder = (folderId: string) => { setFolders(folders => folders.filter(f => f.id !== folderId)); setChats(chats => chats.map(c => c.folderId === folderId ? { ...c, folderId: null } : c)); };
@@ -1022,9 +1022,42 @@ export const App: React.FC = () => {
 
 
     // --- File Handling & Content Generation ---
-    const handleParseFile = async (file: File): Promise<{text: string, type: UploadedFile['type'], url?: string}> => {
+    const handleParseFile = async (file: File): Promise<{text: string, type: UploadedFile['type'], url?: string, pages?: string[]}> => {
         const fileType = file.type; const fileName = file.name.toLowerCase();
-        if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) { const fileUrl = URL.createObjectURL(file); const ab = await file.arrayBuffer(); const pdf = await window.pdfjsLib.getDocument(ab).promise; return { text: (await Promise.all(Array.from({length: pdf.numPages}, async (_, i) => { const page = await pdf.getPage(i+1); const content = await page.getTextContent(); return content.items.map((item: any) => item.str).join(' '); }))).join('\n\n'), type: 'pdf', url: fileUrl}; }
+        
+        if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) { 
+            const fileUrl = URL.createObjectURL(file); 
+            const ab = await file.arrayBuffer(); 
+            const pdf = await window.pdfjsLib.getDocument(ab).promise;
+            
+            const pageTexts = [];
+            const pageImages = [];
+
+            // Limit to first 20 pages for performance for whiteboard rendering, but get all text for AI context
+            for(let i = 0; i < pdf.numPages; i++) {
+                const page = await pdf.getPage(i + 1);
+                const content = await page.getTextContent();
+                pageTexts.push(content.items.map((item: any) => item.str).join(' '));
+
+                // Render page to image
+                if (i < 20) {
+                     const viewport = page.getViewport({ scale: 1.5 });
+                     const canvas = document.createElement('canvas');
+                     const context = canvas.getContext('2d');
+                     canvas.height = viewport.height;
+                     canvas.width = viewport.width;
+                     await page.render({ canvasContext: context, viewport: viewport }).promise;
+                     pageImages.push(canvas.toDataURL());
+                }
+            }
+
+            return { 
+                text: pageTexts.join('\n\n'), 
+                type: 'pdf', 
+                url: fileUrl,
+                pages: pageImages
+            }; 
+        }
         if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileName.endsWith('.docx')) { const ab = await file.arrayBuffer(); return { text: (await window.mammoth.extractRawText({ arrayBuffer: ab })).value, type: 'docx'}; }
         if (fileType === 'text/plain' || fileName.endsWith('.txt')) { return {text: await file.text(), type: 'txt'}; }
         if (fileType.startsWith('image/')) { return { text: '', type: fileType.includes('png') ? 'png' : 'jpeg', url: URL.createObjectURL(file)}; }
@@ -1034,12 +1067,14 @@ export const App: React.FC = () => {
         const file = event.target.files?.[0]; if (!file || !activeChatId || !activeChat) { if (event.target) event.target.value = ''; return; }
         setStatus(`Processing ${file.name}...`);
         try { 
-            const { text, type, url } = await handleParseFile(file);
+            const { text, type, url, pages } = await handleParseFile(file);
             const newFile: UploadedFile = { id: `file-${Date.now()}`, name: file.name, type, content: text, url };
             updateActiveChat(c => ({...c, uploadedFiles: [...(c.uploadedFiles || []), newFile] }));
+            
+            // Add text to context for AI regardless of where it was uploaded
+            updateActiveChat(c => ({ ...c, contextText: (c.contextText + '\n\n' + text).trim() })); 
 
             if (target === 'context') { 
-                updateActiveChat(c => ({ ...c, contextText: (c.contextText + '\n\n' + text).trim() })); 
                 setStatus(`Successfully imported content from ${file.name}.`); 
                 setActiveFileId(newFile.id); 
                 setActiveContextTab('files'); 
@@ -1075,17 +1110,53 @@ export const App: React.FC = () => {
                     }
                 }
             } else { 
-                const position = findNextLogicalCardPosition(activeChat.visualCards);
-                const newCard: VisualCard = { 
-                    id: `card-${Date.now()}`, 
-                    type: type.startsWith('image/') ? 'image' : 'file', 
-                    keyword: file.name, 
-                    status: VisualCardStatus.Loaded, 
-                    imageUrl: newFile.url, 
-                    position: position,
-                    rotation: 0
-                }; 
-                updateActiveChat(c => ({...c, visualCards: [...c.visualCards, newCard]})); setStatus(`Added ${file.name} to whiteboard.`); 
+                // Upload to Whiteboard Logic
+                let newCards: VisualCard[] = [];
+                let currentPos = findNextLogicalCardPosition(activeChat.visualCards);
+                
+                if (type === 'pdf' && pages && pages.length > 0) {
+                    // Render PDF Pages as Images
+                    pages.forEach((pageDataUrl, index) => {
+                         newCards.push({
+                            id: `card-${Date.now()}-p${index}`,
+                            type: 'image',
+                            keyword: `${file.name} - Page ${index + 1}`,
+                            status: VisualCardStatus.Loaded,
+                            imageUrl: pageDataUrl,
+                            position: { top: currentPos.top + (index * 800), left: currentPos.left }, // Stack vertically
+                            rotation: 0,
+                            width: 600 // Default width for PDF pages
+                        });
+                    });
+                    setStatus(`Added ${pages.length} pages from ${file.name} to whiteboard.`); 
+                } else if (type.startsWith('image')) {
+                    newCards.push({ 
+                        id: `card-${Date.now()}`, 
+                        type: 'image', 
+                        keyword: file.name, 
+                        status: VisualCardStatus.Loaded, 
+                        imageUrl: newFile.url, 
+                        position: currentPos,
+                        rotation: 0
+                    }); 
+                    setStatus(`Added ${file.name} to whiteboard.`); 
+                } else {
+                     // Text file / Docx -> Text Card
+                     newCards.push({
+                        id: `card-${Date.now()}`,
+                        type: 'text',
+                        keyword: file.name,
+                        text: text.substring(0, 500) + (text.length > 500 ? '...' : ''), // Preview only
+                        status: VisualCardStatus.Loaded,
+                        position: currentPos,
+                        rotation: 0,
+                        backgroundColor: '#ffffff',
+                        width: 300
+                     });
+                     setStatus(`Added text from ${file.name} to whiteboard.`); 
+                }
+
+                updateActiveChat(c => ({...c, visualCards: [...c.visualCards, ...newCards]})); 
             }
         } catch (error) { console.error('Error processing file:', error); setStatus(`Failed to process ${file.name}.`); }
         finally { if (event.target) event.target.value = ''; }
@@ -1194,47 +1265,82 @@ export const App: React.FC = () => {
                     interimTranscript += transcriptPart;
                 }
             }
-    
-            if (finalTranscriptFromEvent) {
-                finalTranscriptRef.current += finalTranscriptFromEvent.trim() + ' ';
+            
+            // Handle Final Results: Update the active segment text
+            if (finalTranscriptFromEvent && currentSegmentRef.current) {
+                const updatedText = (currentSegmentRef.current.text + ' ' + finalTranscriptFromEvent).trim();
+                currentSegmentRef.current.text = updatedText;
+                
+                // Update state immediately for UI
+                 updateActiveChat(c => ({
+                    ...c,
+                    transcriptSegments: c.transcriptSegments?.map(s => s.id === currentSegmentRef.current?.id ? { ...s, text: updatedText } : s),
+                    contextText: (c.contextText + ' ' + finalTranscriptFromEvent).trim()
+                }));
             }
             
-            setLiveTranscript(finalTranscriptRef.current + interimTranscript);
+            setLiveTranscript(interimTranscript);
         };
 
         recognition.onerror = (event: any) => { console.error("Speech recognition error", event.error); setStatus(`Speech recognition error: ${event.error}`); };
         recognition.onend = () => { if (recognitionOnEndCallbackRef.current) recognitionOnEndCallbackRef.current(); };
         recognitionRef.current = recognition;
-    }, []);
+    }, [activeChatId]);
+
+    const formatTime = (totalSeconds: number) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`; };
 
     const startRecording = () => {
-        if (!recognitionRef.current) return;
+        if (!recognitionRef.current || !activeChatId) return;
         setLiveTranscript('');
-        finalTranscriptRef.current = '';
+        
+        // Create new segment
+        const newSegment: TranscriptSegment = {
+            id: `seg-${Date.now()}`,
+            timestamp: formatTime(sessionSeconds),
+            text: '',
+            isFinal: false,
+            category: 'Listening...'
+        };
+        currentSegmentRef.current = newSegment;
+        
+        updateActiveChat(c => ({
+            ...c,
+            transcriptSegments: [...(c.transcriptSegments || []), newSegment]
+        }));
 
         setIsRecording(true);
         setIsPaused(false);
-        setSeconds(0);
         setActiveContextTab('transcription');
     
         recognitionRef.current.start();
-        timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
+        timerIntervalRef.current = window.setInterval(() => setSessionSeconds(s => s + 1), 1000);
         recognitionOnEndCallbackRef.current = startRecording;
+        setStatus("Recording live audio...");
     };
 
-    const endCurrentRecordingSegment = useCallback(() => {
+    const endCurrentRecordingSegment = useCallback(async () => {
         if (!recognitionRef.current) return;
         recognitionOnEndCallbackRef.current = undefined;
         recognitionRef.current.stop();
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+        
+        // Finalize segment
+        if (currentSegmentRef.current) {
+            const finalText = currentSegmentRef.current.text;
+            // Categorize if there's enough text
+            let category = 'General';
+            if (finalText.length > 20) {
+                 category = await geminiService.categorizeTranscriptSegment(finalText);
+            }
 
-        const capturedText = finalTranscriptRef.current.trim();
-        if (capturedText) {
-            updateActiveChat(c => {
-                const newContextText = (c.contextText.trim() ? c.contextText + ' ' : '') + capturedText;
-                return { ...c, contextText: newContextText };
-            });
+            updateActiveChat(c => ({
+                ...c,
+                transcriptSegments: c.transcriptSegments?.map(s => s.id === currentSegmentRef.current?.id ? { ...s, isFinal: true, category } : s)
+            }));
+            currentSegmentRef.current = null;
         }
+        setLiveTranscript('');
+        setStatus("Ready.");
     }, [activeChatId]);
 
     const stopRecording = () => {
@@ -1244,16 +1350,16 @@ export const App: React.FC = () => {
     };
     
     const pauseRecording = () => {
-        endCurrentRecordingSegment();
+        endCurrentRecordingSegment(); // Finalize current chunk
         setIsPaused(true);
+        setStatus("Recording paused.");
     };
     
+    // Resume effectively starts a new segment
     const resumeRecording = () => {
         if (!recognitionRef.current) return;
         setIsPaused(false);
-        recognitionRef.current.start();
-        timerIntervalRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
-        recognitionOnEndCallbackRef.current = startRecording;
+        startRecording();
     };
     
     useEffect(() => {
@@ -1323,7 +1429,6 @@ export const App: React.FC = () => {
     };
 
     const isAiDisabled = !activeChat?.contextText || activeChat.contextText.length < 100;
-    const formatTime = (totalSeconds: number) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`; };
 
     return (
     <div className="w-screen h-screen flex bg-slate-50 text-slate-800">
@@ -1331,7 +1436,6 @@ export const App: React.FC = () => {
         {activeModalContent?.type === 'quiz' && <QuizModal quiz={activeModalContent.data} onClose={() => setActiveModalContent(null)} />}
         {activeModalContent?.type === 'roadmap' && <RoadmapModal roadmap={activeModalContent.data} onSetStudyGoal={(goal) => {updateActiveChat(c => ({...c, studyGoal: goal})); setStatus("Study goal updated!");}} onClose={() => setActiveModalContent(null)} />}
         {activeModalContent?.type === 'share' && <ShareModal chat={activeChat} whiteboardEl={whiteboardRef.current} onClose={() => setActiveModalContent(null)} />}
-        {isNewSessionModalOpen && <NewSessionModal onClose={() => setIsNewSessionModalOpen(false)} onRecord={() => { startRecording(); setIsNewSessionModalOpen(false); }} onUpload={() => { (fileInputRef.current as any)._target = 'context'; fileInputRef.current?.click(); setIsNewSessionModalOpen(false); }} />}
         <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, (e.target as any)._target)} className="hidden" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" />
         
         <div className="absolute top-4 right-4 z-[100] w-80 space-y-2">
@@ -1379,6 +1483,41 @@ export const App: React.FC = () => {
                             {isSidebarCollapsed && <button onClick={() => setIsSidebarCollapsed(false)} title="Expand Sidebar" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><div className='transform rotate-180'><SidebarCollapseIcon/></div></button>}
                             <input type="text" value={activeChat.title} onChange={e => updateActiveChat(c => ({...c, title: e.target.value}))} className="text-xl font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-[#2f7400] rounded-md -ml-2 px-2 py-1 w-full min-w-0" />
                         </div>
+
+                         {/* Integrated Recording Controls */}
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${isRecording ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                            {isRecording && !isPaused ? (
+                                <>
+                                    <div className="flex items-center gap-2 mr-2">
+                                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                                        <span className="font-mono text-sm font-medium text-red-700">{formatTime(sessionSeconds)}</span>
+                                    </div>
+                                    <button onClick={pauseRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-slate-600 hover:text-slate-800 hover:bg-slate-100" title="Pause Recording"><PauseIcon/></button>
+                                    <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
+                                </>
+                            ) : isPaused ? (
+                                <>
+                                    <span className="font-mono text-sm font-medium text-slate-500 mr-2">Paused ({formatTime(sessionSeconds)})</span>
+                                    <button onClick={resumeRecording} className="p-1.5 bg-[#2f7400] text-white rounded-full hover:bg-[#255b00]" title="Resume Recording"><PlayIcon/></button>
+                                    <button onClick={stopRecording} className="p-1.5 bg-white border border-slate-200 rounded-full text-red-500 hover:text-red-700 hover:bg-red-50" title="Stop Recording"><StopIcon/></button>
+                                </>
+                            ) : (
+                                <button onClick={startRecording} className="flex items-center gap-2 px-2 py-0.5 text-sm font-semibold text-slate-600 hover:text-[#2f7400]">
+                                    <MicIcon />
+                                    <span>Start Live Audio</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Upload Button */}
+                        <button 
+                            onClick={() => { (fileInputRef.current as any)._target = 'whiteboard'; fileInputRef.current?.click() }}
+                            className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-md text-sm font-semibold text-slate-700"
+                            title="Upload slides or notes directly to the whiteboard"
+                        >
+                            <UploadIcon />
+                            <span>Upload to Board</span>
+                        </button>
                                             
                         <div className="flex items-center gap-2 shrink-0">
                              <button onClick={() => setActiveModalContent({type: 'share'})} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg" title="Share or Export"><ShareIcon/></button>
@@ -1434,10 +1573,59 @@ export const App: React.FC = () => {
                                 <div className="bg-slate-100 rounded-lg p-1 flex-grow flex flex-col border border-slate-200/80">
                                     <div className="flex items-center p-2 border-b border-slate-200">
                                         <div className="flex-1 flex-nowrap overflow-x-auto">
-                                            <button onClick={() => setActiveContextTab('notes')} className={`px-3 py-1 text-sm rounded-l-md ${activeContextTab === 'notes' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Notes</button>
-                                            <button onClick={() => setActiveContextTab('transcription')} className={`px-3 py-1 text-sm ${activeContextTab === 'transcription' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Transcription</button>
+                                            <button onClick={() => setActiveContextTab('transcription')} className={`px-3 py-1 text-sm rounded-l-md ${activeContextTab === 'transcription' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Transcript</button>
+                                            <button onClick={() => setActiveContextTab('notes')} className={`px-3 py-1 text-sm ${activeContextTab === 'notes' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Notes</button>
                                             <button onClick={() => setActiveContextTab('files')} className={`px-3 py-1 text-sm rounded-r-md ${activeContextTab === 'files' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-500'}`}>Files ({activeChat.uploadedFiles?.length || 0})</button>
                                         </div>
                                         <button onClick={() => { (fileInputRef.current as any)._target = 'context'; fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1 bg-[#2f7400] text-white rounded-md text-sm font-semibold hover:bg-[#255b00] transition-colors shrink-0"><UploadIcon />Add</button>
                                     </div>
-                                     <div
+                                     <div className="flex-grow overflow-y-auto p-4 sidebar-scroll">
+                                        {activeContextTab === 'notes' && (
+                                            <div className="prose prose-sm prose-slate max-w-none">
+                                                {activeChat.contextText ? (
+                                                    <div className="whitespace-pre-wrap">{activeChat.contextText}</div>
+                                                ) : (
+                                                    <div className="text-slate-400 italic text-center mt-10">
+                                                        No text context available. <br/>Upload a file or start speaking to populate notes.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {activeContextTab === 'transcription' && (
+                                            <div className="space-y-4">
+                                                {(!activeChat.transcriptSegments || activeChat.transcriptSegments.length === 0) && !isRecording && (
+                                                    <div className="text-slate-400 italic text-center mt-10">
+                                                        <MicIcon className="w-12 h-12 mx-auto mb-2 opacity-50"/>
+                                                        No audio transcription yet. <br/>Click "Start Live Audio" in the header.
+                                                    </div>
+                                                )}
+                                                
+                                                {activeChat.transcriptSegments?.map(segment => (
+                                                    <TranscriptSegmentItem key={segment.id} segment={segment} />
+                                                ))}
+
+                                                {isRecording && liveTranscript && (
+                                                    <div className="p-3 mb-2 bg-white rounded-lg border border-[#2f7400] shadow-sm animate-pulse">
+                                                         <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-xs font-mono font-bold text-red-500">Live</span>
+                                                        </div>
+                                                        <p className="text-sm text-slate-700">{liveTranscript}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {activeContextTab === 'files' && (
+                                            <FileList files={activeChat.uploadedFiles || []} activeFileId={activeFileId} onSelectFile={(id) => { const file = activeChat.uploadedFiles?.find(f => f.id === id); if(file) { if(file.content) { setActiveContextTab('notes'); } else { alert('This file does not have readable text context.'); } } }} />
+                                        )}
+                                     </div>
+                                </div>
+                            </aside>
+                            </>
+                        )}
+                    </main>
+                </>
+            )}
+        </div>
+    </div>
+    );
+};
