@@ -28,6 +28,7 @@ export interface VisualCard {
   fileUrl?: string; // For image/file objects
   sourceText?: string; // For linking summaries back to source
   newlyCreated?: boolean; // Flag to trigger auto-editing
+  visible?: boolean; // New: Toggle visibility of card content
 }
 
 export interface TranscriptSegment {

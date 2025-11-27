@@ -13,7 +13,7 @@ import {
     RectangleIcon, EllipseIcon, LineIcon, ArrowIcon, FileIcon, SidebarCollapseIcon, SourceIcon, PaletteIcon,
     CanopyLogo, ZoomInIcon, ZoomOutIcon, FullScreenIcon, ClearIcon,
     NoteIcon, RefreshIcon, ImageIcon, CheckCircleIcon, XCircleIcon, InfoCircleIcon,
-    AiLassoIcon, LightbulbIcon, BookOpenIcon, ConnectIcon, BrainIcon, CritiqueIcon
+    AiLassoIcon, LightbulbIcon, BookOpenIcon, ConnectIcon, BrainIcon, CritiqueIcon, EyeIcon, EyeSlashIcon
 } from './components/Icons';
 
 // Extend the Window interface for external libraries
@@ -55,7 +55,7 @@ const MarkdownRenderer: React.FC<{ content: string, className?: string }> = ({ c
     return <KatexRenderer content={parsedHtml} className={className} />;
 };
 
-const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelected: boolean, onSelect: (id: string, multi: boolean) => void, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void, onRegenerate: (id: string, keyword: string) => void }> = ({ card, scale, isSelected, onSelect, onDelete, onUpdate, onRegenerate }) => {
+const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelected: boolean, onSelect: (id: string, multi: boolean, clickPos?: {x:number, y:number}) => void, onDelete: (id: string) => void, onUpdate: (card: VisualCard) => void, onRegenerate: (id: string, keyword: string) => void }> = ({ card, scale, isSelected, onSelect, onDelete, onUpdate, onRegenerate }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(card.text || '');
@@ -67,7 +67,6 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
     useEffect(() => {
         if (newlyCreated) {
             setIsEditing(true);
-            // Remove the flag after triggering edit mode
             onUpdate({ ...card, newlyCreated: false });
         }
     }, [newlyCreated, card, onUpdate]);
@@ -79,7 +78,7 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
         if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement || e.target instanceof Path2D || (e.target as HTMLElement).closest('button')) return;
         if (isEditing && textareaRef.current?.contains(e.target as Node)) return;
         
-        onSelect(card.id, e.shiftKey || e.ctrlKey || e.metaKey);
+        onSelect(card.id, e.shiftKey || e.ctrlKey || e.metaKey, {x: e.clientX, y: e.clientY});
 
         setIsDragging(true);
         dragStartPos.current = { x: e.clientX, y: e.clientY, top: card.position.top, left: card.position.left };
@@ -105,6 +104,11 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
         setIsEditing(false);
         onUpdate({ ...card, text: editText });
     };
+    
+    const toggleVisibility = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onUpdate({ ...card, visible: !(card.visible ?? true) });
+    };
 
     const handleColorChange = (color: string) => onUpdate({ ...card, backgroundColor: color });
 
@@ -113,21 +117,40 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
     const colors = ['#fef9c3', '#f0fdf4', '#f0f9ff', '#fef2f2', '#faf5ff'];
     const isTextbox = card.type === 'text' && card.backgroundColor === 'transparent';
     const isAiCard = card.type === 'text' && (card.backgroundColor === '#f0fdf4' || card.backgroundColor === '#dcfce7');
+    const isVisible = card.visible ?? true;
 
     const selectionClass = isSelected ? 'ring-2 ring-[#2f7400] ring-offset-2 z-50' : '';
+    
+    // Hidden overlay style
+    const hiddenOverlay = (
+        <div className="absolute inset-0 bg-slate-100/50 backdrop-blur-sm flex items-center justify-center rounded-lg z-20">
+             <div className="flex flex-col items-center text-slate-400">
+                 <EyeSlashIcon />
+                 <span className="text-xs font-semibold mt-1">Hidden</span>
+             </div>
+        </div>
+    );
 
     if (card.type === 'image') {
         return (
             <div 
                 ref={cardRef} 
                 onMouseDown={handleMouseDown} 
-                style={{ ...cardStyle, width: card.width ? card.width : 300 }} // Provide a default width
+                style={{ ...cardStyle, width: card.width ? card.width : 300 }} 
                 className={`visual-card absolute cursor-grab p-0 bg-transparent border-0 shadow-none group ${selectionClass}`}
             >
-                {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="w-full h-auto object-contain pointer-events-none select-none" draggable={false} />}
-                <button onClick={() => onDelete(card.id)} className="absolute top-0 right-0 m-1 p-1 bg-white/70 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-opacity z-10">
-                    <DeleteIcon />
-                </button>
+                <div className="relative">
+                    {!isVisible && hiddenOverlay}
+                    {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className={`w-full h-auto object-contain pointer-events-none select-none ${!isVisible ? 'opacity-0' : ''}`} draggable={false} />}
+                </div>
+                 <div className="absolute top-0 right-0 m-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                     <button onClick={toggleVisibility} className="p-1 bg-white/70 rounded-full hover:bg-slate-100 text-slate-500">
+                        {isVisible ? <EyeIcon /> : <EyeSlashIcon />}
+                     </button>
+                    <button onClick={() => onDelete(card.id)} className="p-1 bg-white/70 rounded-full hover:bg-red-100 text-slate-400 hover:text-red-600">
+                        <DeleteIcon />
+                    </button>
+                 </div>
             </div>
         );
     }
@@ -142,6 +165,9 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
                 <div className="flex items-start justify-between mb-2 pb-2 border-b border-slate-200/70">
                     <span className="font-semibold text-sm text-slate-700 truncate pr-2">{card.keyword}</span>
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button onClick={toggleVisibility} className="p-1 hover:bg-slate-200 rounded-full text-slate-400 mr-1">
+                            {isVisible ? <EyeIcon /> : <EyeSlashIcon />}
+                        </button>
                         {card.type === 'ai' && (
                             <button onClick={() => onRegenerate(card.id, card.keyword)} className="p-1 hover:bg-slate-200 rounded-full text-slate-400" title="Regenerate"><RefreshIcon/></button>
                         )}
@@ -166,28 +192,39 @@ const VisualCardComponent: React.FC<{ card: VisualCard, scale: number, isSelecte
                 </div>
             )}
             <div className={`flex-grow flex items-center justify-center min-h-[40px] overflow-hidden relative ${isTextbox ? 'p-1' : 'min-h-[120px]'}`}>
+                {!isVisible && !isTextbox && hiddenOverlay}
+                
                 {isTextbox && (
-                     <button onClick={() => onDelete(card.id)} className="absolute top-[-8px] right-[-8px] p-1 bg-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-opacity z-10 border shadow-sm">
-                        <DeleteIcon />
-                    </button>
+                    <div className="absolute top-[-20px] right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                         <button onClick={toggleVisibility} className="p-1 bg-white rounded-full border shadow-sm text-slate-500">
+                             {isVisible ? <EyeIcon /> : <EyeSlashIcon />}
+                        </button>
+                        <button onClick={() => onDelete(card.id)} className="p-1 bg-white rounded-full hover:bg-red-100 text-slate-400 hover:text-red-600 border shadow-sm">
+                            <DeleteIcon />
+                        </button>
+                    </div>
                 )}
-                {card.status === VisualCardStatus.Loading && <div className="loader"></div>}
-                {card.status === VisualCardStatus.Error && <span className="text-red-500 text-sm">Error</span>}
-                {card.status === VisualCardStatus.Loaded && (
-                    <>
-                        {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain pointer-events-none" />}
-                        {card.type === 'text' && (isEditing ?
-                            <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className={`w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 ${isTextbox ? 'text-lg' : 'text-sm'}`} /> :
-                            <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text ${isAiCard ? 'text-sm leading-relaxed' : ''}`}><MarkdownRenderer content={card.text || ''} /></div>
-                        )}
-                        {card.type === 'file' && (
-                            <div className="flex flex-col items-center text-center p-2">
-                                <FileIcon/>
-                                <span className="text-sm mt-2 font-medium text-slate-600 break-all">{card.keyword}</span>
-                            </div>
-                        )}
-                    </>
-                )}
+                
+                {/* Content */}
+                <div className={`${!isVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'} w-full h-full`}>
+                    {card.status === VisualCardStatus.Loading && <div className="loader mx-auto mt-4"></div>}
+                    {card.status === VisualCardStatus.Error && <span className="text-red-500 text-sm">Error</span>}
+                    {card.status === VisualCardStatus.Loaded && (
+                        <>
+                            {card.imageUrl && <img src={card.imageUrl} alt={card.keyword} className="max-w-full max-h-full object-contain pointer-events-none" />}
+                            {card.type === 'text' && (isEditing ?
+                                <textarea ref={textareaRef} value={editText} onChange={(e) => setEditText(e.target.value)} onBlur={handleEditBlur} className={`w-full h-full resize-none bg-transparent focus:outline-none text-slate-600 ${isTextbox ? 'text-lg' : 'text-sm'}`} /> :
+                                <div onDoubleClick={() => setIsEditing(true)} className={`prose ${isTextbox ? 'prose-lg' : 'prose-sm'} text-slate-600 w-full h-full cursor-text ${isAiCard ? 'text-sm leading-relaxed' : ''}`}><MarkdownRenderer content={card.text || ''} /></div>
+                            )}
+                            {card.type === 'file' && (
+                                <div className="flex flex-col items-center text-center p-2">
+                                    <FileIcon/>
+                                    <span className="text-sm mt-2 font-medium text-slate-600 break-all">{card.keyword}</span>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -308,8 +345,10 @@ const RoadmapModal: React.FC<{ roadmap: Roadmap, onClose: () => void, onSetStudy
             {roadmap.steps.map((step, i) => (
                 <div key={step.step} className="mb-6 relative">
                     <div className="absolute -left-6 top-1 w-6 h-6 bg-[#2f7400] text-white rounded-full flex items-center justify-center font-bold text-sm">{step.step}</div>
-                    <h4 className="font-bold text-slate-800">{step.concept}</h4>
-                    <p className="text-slate-600">{step.description}</p>
+                    <div className="ml-4">
+                        <h4 className="font-bold text-slate-800">{step.concept}</h4>
+                        <p className="text-slate-600">{step.description}</p>
+                    </div>
                 </div>
             ))}
         </div>
@@ -529,11 +568,13 @@ const ToastNotification: React.FC<{ toast: Toast, onDismiss: (id: number) => voi
 
 const TranscriptSegmentItem: React.FC<{ segment: TranscriptSegment }> = ({ segment }) => (
     <div className="p-3 mb-2 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">
-        <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-mono font-bold text-[#2f7400] bg-[#2f7400]/10 px-1.5 py-0.5 rounded">{segment.timestamp}</span>
-            {segment.category && <span className="text-xs text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-full">{segment.category}</span>}
+        <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-mono font-bold text-[#2f7400] bg-[#2f7400]/10 px-2 py-0.5 rounded-full">{segment.timestamp}</span>
+            {segment.category && <span className="text-xs font-medium text-slate-500 border border-slate-200 bg-white px-2 py-0.5 rounded-full">{segment.category}</span>}
         </div>
-        <p className="text-sm text-slate-700 leading-relaxed"><MarkdownRenderer content={segment.text} /></p>
+        <div className="text-sm text-slate-700 leading-relaxed prose prose-sm max-w-none">
+            <MarkdownRenderer content={segment.text} />
+        </div>
     </div>
 );
 
@@ -980,7 +1021,7 @@ export const App: React.FC = () => {
                 if (previewCtx && previewCanvasRef.current) {
                     previewCtx.clearRect(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
                     previewCtx.lineWidth = 2 / panZoomRef.current.scale;
-                    previewCtx.strokeStyle = '#2f7400';
+                    previewCtx.strokeStyle = '#facc15';
                     previewCtx.setLineDash([5, 5]);
                     previewCtx.beginPath();
                     if (lassoPath.length > 0) {
@@ -1053,7 +1094,6 @@ export const App: React.FC = () => {
                     const maxY = Math.max(...lassoPath.map(p => p.y));
 
                     // Find cards inside bounding box
-                    // Simple collision: if card center is inside box
                     const newSelectedIds: string[] = [];
                     activeChat?.visualCards.forEach(card => {
                         const cardWidth = card.width || 220;
@@ -1069,18 +1109,12 @@ export const App: React.FC = () => {
 
                     setSelectedCardIds(newSelectedIds);
                     if (newSelectedIds.length > 0) {
-                        // Position menu near the top-right of the selection box, adjusted for screen
-                        const { scale, panX, panY } = panZoomRef.current;
-                        // Transform canvas coords back to screen coords for the menu position (roughly)
-                        // Actually, menu is absolute positioned inside container, so we use container relative (but menu needs top/left)
-                        // We will position it relative to the whiteboard container
-                        // The menu is absolute positioned in main div? No, let's put it in the whiteboard container logic or handle coords.
-                        // Ideally, we want UI coordinates.
-                        // Let's use the bounds maxX, minY converted to DOM pixels
-                        const menuLeft = (maxX * scale) + panX + 20; 
-                        const menuTop = (minY * scale) + panY;
+                        // Position menu at cursor mouseup location relative to container
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = e.clientX - rect.left;
+                        const mouseY = e.clientY - rect.top;
                         
-                        setAiMenuPosition({ top: Math.max(20, menuTop), left: Math.min(container.clientWidth - 200, menuLeft) });
+                        setAiMenuPosition({ top: mouseY + 10, left: mouseX + 10 });
                     }
                 }
                 setLassoPath([]);
@@ -1118,31 +1152,25 @@ export const App: React.FC = () => {
     };
 
     // Handle Selection Logic for Single Cards
-    const handleCardSelect = (id: string, multi: boolean) => {
-        // If lasso just finished, we might have selection. If user clicks a card:
+    const handleCardSelect = (id: string, multi: boolean, clickPos?: {x: number, y: number}) => {
         let newSelection = [...selectedCardIds];
         if (multi) {
             if (newSelection.includes(id)) newSelection = newSelection.filter(sid => sid !== id);
             else newSelection.push(id);
         } else {
             if (!newSelection.includes(id)) newSelection = [id];
-            // If already selected and no modifier, keep selection (might be start of drag)
         }
         
         setSelectedCardIds(newSelection);
         
-        // Calculate menu position for single click
-        // We need the card's position.
-        const card = activeChat?.visualCards.find(c => c.id === id);
-        if (card && newSelection.length > 0) {
-             const { scale, panX, panY } = panZoomRef.current;
-             const cardWidth = card.width || 220;
-             const menuLeft = ((card.position.left + cardWidth) * scale) + panX + 20;
-             const menuTop = (card.position.top * scale) + panY;
-             // Ensure inside container
+        // Calculate menu position for single click at mouse cursor
+        if (newSelection.length > 0 && clickPos) {
              const container = whiteboardContainerRef.current;
              if(container) {
-                 setAiMenuPosition({ top: Math.max(20, menuTop), left: Math.min(container.clientWidth - 200, menuLeft) });
+                 const rect = container.getBoundingClientRect();
+                 const mouseX = clickPos.x - rect.left;
+                 const mouseY = clickPos.y - rect.top;
+                 setAiMenuPosition({ top: mouseY + 10, left: mouseX + 10 });
              }
         } else {
              setAiMenuPosition(null);
@@ -1155,11 +1183,6 @@ export const App: React.FC = () => {
         const handleWheel = (e: WheelEvent) => {
             e.preventDefault();
             const pz = panZoomRef.current;
-            
-            // Standardizing zoom vs pan logic
-            // Most trackpads emit scroll events. 
-            // If ctrl key is pressed -> Zoom
-            // If no ctrl key -> Pan (Scroll)
             
             if (e.ctrlKey || e.metaKey) { // Zoom
                 const zoomIntensity = 0.1;
@@ -1179,7 +1202,6 @@ export const App: React.FC = () => {
                 pz.panY -= e.deltaY; 
             } 
             updateWhiteboardTransform();
-            // Hide AI menu on pan/zoom to avoid floating weirdly
             if (selectedCardIds.length > 0) setAiMenuPosition(null); 
         };
         container.addEventListener('wheel', handleWheel, { passive: false });
@@ -1189,12 +1211,10 @@ export const App: React.FC = () => {
     // Global Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Undo: Ctrl+Z
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
                 e.preventDefault();
                 handleUndo();
             }
-            // Redo: Ctrl+Y or Ctrl+Shift+Z
             if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
                 e.preventDefault();
                 handleRedo();
@@ -1203,7 +1223,7 @@ export const App: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeChat]); // Dependent on activeChat to access latest state via handleUndo/Redo if they were closed over state, but they use refs/updateActiveChat
+    }, [activeChat]);
 
     const handleZoom = (direction: 'in' | 'out') => {
         const pz = panZoomRef.current;
@@ -1222,11 +1242,10 @@ export const App: React.FC = () => {
         pz.scale *= scaleFactor;
 
         updateWhiteboardTransform();
-         // Hide AI menu on zoom
         if (selectedCardIds.length > 0) setAiMenuPosition(null);
     };
     const handleToggleFullScreen = () => {
-        const elem = document.documentElement; // Full screen the whole app
+        const elem = document.documentElement; 
         if (!document.fullscreenElement) {
             elem.requestFullscreen().catch(err => {
                 alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
@@ -1582,13 +1601,17 @@ export const App: React.FC = () => {
             const finalText = currentSegmentRef.current.text;
             // Categorize if there's enough text
             let category = 'General';
+            let formattedText = finalText;
+
             if (finalText.length > 20) {
                  category = await geminiService.categorizeTranscriptSegment(finalText);
+                 // Format text with AI
+                 formattedText = await geminiService.formatTranscriptSegment(finalText);
             }
 
             updateActiveChat(c => ({
                 ...c,
-                transcriptSegments: c.transcriptSegments?.map(s => s.id === currentSegmentRef.current?.id ? { ...s, isFinal: true, category } : s)
+                transcriptSegments: c.transcriptSegments?.map(s => s.id === currentSegmentRef.current?.id ? { ...s, isFinal: true, category, text: formattedText } : s)
             }));
             currentSegmentRef.current = null;
         }
@@ -1650,6 +1673,24 @@ export const App: React.FC = () => {
                            <NoteIcon />
                            <span className="truncate">Source Notes</span>
                         </button>
+                        
+                        {/* Sidebar Recordings */}
+                        {(chat.transcriptSegments && chat.transcriptSegments.length > 0) && (
+                            <div className="pt-1">
+                                <div className="text-[10px] uppercase font-bold text-slate-400 mb-1 ml-1">Recordings</div>
+                                {chat.transcriptSegments.map((seg, i) => (
+                                    <button 
+                                        key={seg.id} 
+                                        onClick={() => { setIsContextPanelVisible(true); setActiveContextTab('transcription'); }} 
+                                        className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded"
+                                    >
+                                        <MicIcon className="w-3 h-3" />
+                                        <span className="truncate">{seg.category || `Clip ${i+1}`} ({seg.timestamp})</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
                         {(chat.uploadedFiles && chat.uploadedFiles.length > 0) && chat.uploadedFiles.map(file => (
                             <button key={file.id} onClick={() => { setIsContextPanelVisible(true); setActiveContextTab('files'); setActiveFileId(file.id); }} className="flex items-center gap-2 w-full text-left p-1 text-xs text-gray-500 hover:bg-slate-200 rounded">
                                 <FileIcon />

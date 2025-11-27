@@ -373,6 +373,27 @@ TEXT:
     }
 };
 
+export const formatTranscriptSegment = async (text: string): Promise<string> => {
+    if (text.trim().length < 20) return text;
+    const prompt = `Reformat the following lecture transcript segment to be cleaner and easier to read.
+    1. Bold key terms and important concepts using Markdown (**bold**).
+    2. Add paragraph breaks (whitespace) between distinct ideas.
+    3. Use bullet points if the speaker lists items.
+    4. Maintain the original meaning and tone, just enhance formatting.
+
+TEXT:
+"""${text}"""`;
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+        });
+        return response.text.trim();
+    } catch (error) {
+        return text;
+    }
+};
+
 export const performAiAction = async (action: 'example' | 'explain' | 'connect' | 'check', text: string): Promise<string> => {
     let prompt = "";
     switch (action) {
