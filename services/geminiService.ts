@@ -373,16 +373,44 @@ TEXT:
     }
 };
 
+export const summarizeTranscriptSegment = async (text: string): Promise<string> => {
+    if (text.trim().length < 30) return '';
+    // Improved prompt for structured, useful summaries (Concepts, Definitions, Examples)
+    const prompt = `Create a "Smart Summary" of the following lecture segment. 
+    Do NOT just repeat the text. Instead, identify the core concept being discussed and format it as follows using Markdown:
+    
+    **Concept Name**
+    *   **Definition:** [A concise 1-sentence explanation]
+    *   **Key Insight/Example:** [A brief real-world analogy or example mentioned, or a key takeaway]
+
+    Keep it very concise.
+
+    TEXT: """${text}"""`;
+    
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+        });
+        return response.text.trim();
+    } catch (error) {
+        return '';
+    }
+};
+
 export const formatTranscriptSegment = async (text: string): Promise<string> => {
     if (text.trim().length < 20) return text;
-    const prompt = `Reformat the following lecture transcript segment to be cleaner and easier to read.
-    1. Bold key terms and important concepts using Markdown (**bold**).
-    2. Add paragraph breaks (whitespace) between distinct ideas.
-    3. Use bullet points if the speaker lists items.
-    4. Maintain the original meaning and tone, just enhance formatting.
+    // Improved prompt for cleaning up transcription errors (stumbling, repetition)
+    const prompt = `You are an expert transcription editor. Clean up the following raw speech-to-text output.
+    1.  **Remove Disfluencies:** Eliminate repeated words, stumbling, false starts, and filler words (like "um", "uh", "like", "you know").
+    2.  **Fix Grammar:** Correct basic grammatical errors while maintaining the speaker's original voice and intent.
+    3.  **Format:** Use Markdown to bold key terms and add paragraph breaks where natural pauses occur.
+    
+    Do not summarize. Output the full cleaned text.
 
-TEXT:
-"""${text}"""`;
+    RAW TEXT:
+    """${text}"""`;
+    
     try {
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -420,5 +448,33 @@ export const performAiAction = async (action: 'example' | 'explain' | 'connect' 
     } catch (error) {
         console.error(`Error performing AI action ${action}:`, error);
         throw new Error(`Failed to perform ${action}.`);
+    }
+};
+
+export const recognizeHandwriting = async (imageBase64: string): Promise<string> => {
+    const prompt = `Transcribe the handwriting in this image into text.
+    - If the image contains mathematical formulas, equations, or symbols, STRICTLY use LaTeX format enclosed in single dollar signs (e.g. $E=mc^2$).
+    - If it contains diagrams or drawings, describe them briefly in brackets [Diagram of...].
+    - Maintain the original structure and line breaks where possible.
+    - If it's just text, return standard text.
+    - Do not add any conversational filler, just return the transcribed content.`;
+
+    try {
+        // Strip the data:image/png;base64, prefix if present
+        const base64Data = imageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: base64Data } },
+                    { text: prompt }
+                ],
+            },
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error recognizing handwriting:", error);
+        throw new Error("Failed to recognize handwriting.");
     }
 };

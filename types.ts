@@ -36,6 +36,7 @@ export interface TranscriptSegment {
     timestamp: string; // e.g. "00:45"
     text: string;
     category?: string;
+    summary?: string; // New: 1 sentence description
     isFinal: boolean;
 }
 
